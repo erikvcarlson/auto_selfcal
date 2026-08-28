@@ -57,6 +57,8 @@ parser.add_argument('--run_findcont', action='store_true')
 parser.add_argument('--align_EBs', action='store_true')
 parser.add_argument('--align_optimizer', default='minimize', type=str)
 parser.add_argument('--debug', action='store_true')
+parser.add_argument('--use_wproject', default=True, type=bool)
+
 
 parser.add_argument('--exit', action='store_true')
 

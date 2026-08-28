@@ -86,6 +86,7 @@ def auto_selfcal(
         imsize=None,
         cell=None,
         refant=None,
+        use_wproject=True,
         **kwargs):
     """
     Main function to run the self-calibration pipeline.
@@ -495,7 +496,7 @@ def auto_selfcal(
                               band,nsigma=4.0, scales=[0],
                               threshold='0.0Jy',niter=1, gain=0.00001,
                               savemodel='none',parallel=parallel,
-                              field=target, vis_to_image=[vis])
+                              field=target, vis_to_image=[vis],use_wproject=use_wproject)
 
                dirty_SNR, dirty_RMS, dirty_NF_SNR, dirty_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_dirty.image.tt0', sani_target+'_'+band+'_'+vis+'_dirty.mask',
                         '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'dirty', 'dirty')
@@ -504,7 +505,7 @@ def auto_selfcal(
                               band,nsigma=4.0, scales=[0],
                               threshold='theoretical_with_drmod',
                               savemodel='modelcolumn',parallel=parallel,
-                              field=target,nfrms_multiplier=dirty_NF_RMS/dirty_RMS, vis_to_image=[vis])
+                              field=target,nfrms_multiplier=dirty_NF_RMS/dirty_RMS, vis_to_image=[vis],use_wproject=use_wproject)
 
                initial_SNR, initial_RMS, initial_NF_SNR, initial_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_initial.image.tt0', 
                        sani_target+'_'+band+'_'+vis+'_initial.mask', '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'orig', 'orig')
@@ -576,7 +577,7 @@ def auto_selfcal(
                       band,nsigma=4.0, scales=[0],
                       threshold='0.0Jy',niter=1, gain=0.00001,
                       savemodel='none',parallel=parallel,
-                      field=target)
+                      field=target,use_wproject=use_wproject)
 
        dirty_SNR, dirty_RMS, dirty_NF_SNR, dirty_NF_RMS = get_image_stats(sani_target+'_'+band+'_dirty.image.tt0', sani_target+'_'+band+'_dirty.mask',
                 '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] != 'ACA' or aca_use_nfmask), 'dirty', 'dirty')
@@ -596,7 +597,7 @@ def auto_selfcal(
                       band,nsigma=4.0, scales=[0],
                       threshold='theoretical_with_drmod',
                       savemodel='none',parallel=parallel,
-                      field=target,nfrms_multiplier=dirty_NF_RMS/dirty_RMS,store_threshold='orig')
+                      field=target,nfrms_multiplier=dirty_NF_RMS/dirty_RMS,store_threshold='orig', use_wproject=use_wproject)
 
        initial_SNR, initial_RMS, initial_NF_SNR, initial_NF_RMS = get_image_stats(sani_target+'_'+band+'_initial.image.tt0', 
                sani_target+'_'+band+'_initial.mask', '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] != 'ACA' or aca_use_nfmask), 'orig', 'orig')
@@ -666,7 +667,7 @@ def auto_selfcal(
                       band,nsigma=4.0, scales=[0],
                       threshold='0.0Jy',niter=1,gain=0.00001,
                       savemodel='none',parallel=parallel,
-                      field=target,spw=spw)
+                      field=target,spw=spw,use_wproject=use_wproject)
 
                 dirty_SNR, dirty_RMS, dirty_per_spw_NF_SNR, dirty_per_spw_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+str(spw)+
                         '_dirty.image.tt0', sani_target+'_'+band+'_'+str(spw)+'_dirty.mask','', selfcal_library[target][band], 
@@ -676,7 +677,7 @@ def auto_selfcal(
                            band,nsigma=4.0, threshold='theoretical_with_drmod',scales=[0],\
                            savemodel='none',parallel=parallel,\
                            field=target,datacolumn='corrected',\
-                           spw=spw,nfrms_multiplier=dirty_per_spw_NF_RMS/dirty_RMS)
+                           spw=spw,nfrms_multiplier=dirty_per_spw_NF_RMS/dirty_RMS,use_wproject=use_wproject)
 
                 per_spw_SNR, per_spw_RMS, initial_per_spw_NF_SNR, initial_per_spw_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+str(spw)+
                         '_initial.image.tt0', sani_target+'_'+band+'_'+str(spw)+'_initial.mask', '', selfcal_library[target][band], 
@@ -726,7 +727,7 @@ def auto_selfcal(
                unflag_only_lbants_onlyap=unflag_only_lbants_onlyap, calonly_max_flagged=calonly_max_flagged, \
                second_iter_solmode=second_iter_solmode, unflag_fb_to_prev_solint=unflag_fb_to_prev_solint, rerank_refants=rerank_refants, \
                gaincalibrator_dict=gaincalibrator_dict, allow_gain_interpolation=allow_gain_interpolation, guess_scan_combine=guess_scan_combine, \
-               aca_use_nfmask=aca_use_nfmask,debug=debug,spectral_solution_fraction=spectral_solution_fraction)
+               aca_use_nfmask=aca_use_nfmask,debug=debug,spectral_solution_fraction=spectral_solution_fraction,use_wproject=use_wproject)
 
     if debug:
         print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
@@ -747,7 +748,7 @@ def auto_selfcal(
                    inf_EB_gaincal_combine=inf_EB_gaincal_combine, inf_EB_gaintype=inf_EB_gaintype, unflag_only_lbants=unflag_only_lbants, \
                    unflag_only_lbants_onlyap=unflag_only_lbants_onlyap, calonly_max_flagged=calonly_max_flagged, \
                    second_iter_solmode=second_iter_solmode, unflag_fb_to_prev_solint=unflag_fb_to_prev_solint, rerank_refants=rerank_refants, \
-                   mode="cocal", calibrators=calibrators, gaincalibrator_dict=gaincalibrator_dict, allow_gain_interpolation=True)
+                   mode="cocal", calibrators=calibrators, gaincalibrator_dict=gaincalibrator_dict, allow_gain_interpolation=True,use_wproject=use_wproject)
         
         if debug:
             print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
@@ -771,7 +772,7 @@ def auto_selfcal(
                    band,nsigma=3.0, threshold=str(clean_threshold)+'Jy',scales=[0],\
                    savemodel='none',parallel=parallel,
                    field=target,datacolumn='corrected',\
-                   nfrms_multiplier=nfsnr_modifier)
+                   nfrms_multiplier=nfsnr_modifier,use_wproject=use_wproject)
 
        final_SNR, final_RMS, final_NF_SNR, final_NF_RMS = get_image_stats(sani_target+'_'+band+'_final.image.tt0', sani_target+'_'+band+'_final.mask',
                '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'final', 'final')
@@ -828,7 +829,7 @@ def auto_selfcal(
                               band,nsigma=4.0, threshold='theoretical',scales=[0],\
                               savemodel='none',parallel=parallel,\
                               field=target,datacolumn='corrected',\
-                              spw=spw,nfrms_multiplier=nfsnr_modifier)
+                              spw=spw,nfrms_multiplier=nfsnr_modifier,use_wproject=use_wproject)
 
                 final_per_spw_SNR, final_per_spw_RMS, final_per_spw_NF_SNR, final_per_spw_NF_RMS = get_image_stats(
                         sani_target+'_'+band+'_'+str(spw)+'_final.image.tt0', sani_target+'_'+band+'_'+str(spw)+'_final.mask',

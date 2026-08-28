@@ -180,7 +180,7 @@ def run_selfcal(selfcal_library, selfcal_plan, target, band, n_ants, \
                          band,nsigma=selfcal_library['nsigma'][iteration], scales=[0],
                          threshold=str(selfcal_library[vislist[0]][solint]['clean_threshold'])+'Jy',
                          savemodel='none',parallel=parallel,
-                         field=target, nfrms_multiplier=selfcal_library[vislist[0]][solint]['nfrms_multiplier'], resume=resume)
+                         field=target, nfrms_multiplier=selfcal_library[vislist[0]][solint]['nfrms_multiplier'], resume=resume,use_wproject=use_wproject)
 
              # Check that a mask was actually created, because if not the model will be empty and gaincal will do bad things and the 
              # code will break.
@@ -220,7 +220,7 @@ def run_selfcal(selfcal_library, selfcal_plan, target, band, n_ants, \
                             band,nsigma=selfcal_library['nsigma'][iteration], scales=[0],
                             threshold=str(selfcal_library[vislist[0]][solint]['clean_threshold'])+'Jy',
                             savemodel='modelcolumn',parallel=parallel,
-                            field=target, nfrms_multiplier=selfcal_library[vislist[0]][solint]['nfrms_multiplier'], savemodel_only=True)
+                            field=target, nfrms_multiplier=selfcal_library[vislist[0]][solint]['nfrms_multiplier'], savemodel_only=True,use_wproject=use_wproject)
 
             # Fields that don't have any mask in the primary beam should be removed from consideration, as their models are likely bad.
             if selfcal_library['obstype'] == 'mosaic':
@@ -293,7 +293,7 @@ def run_selfcal(selfcal_library, selfcal_plan, target, band, n_ants, \
                   band,nsigma=selfcal_library['nsigma'][iteration], scales=[0],
                   threshold=str(selfcal_library[vislist[0]][solint]['clean_threshold'])+'Jy',
                   savemodel='none',parallel=parallel,
-                  field=target, nfrms_multiplier=selfcal_library[vislist[0]][solint]['nfrms_multiplier'])
+                  field=target, nfrms_multiplier=selfcal_library[vislist[0]][solint]['nfrms_multiplier'],use_wproject=use_wproject  )
  
 
 
@@ -409,7 +409,7 @@ def run_selfcal(selfcal_library, selfcal_plan, target, band, n_ants, \
                       threshold=str(selfcal_library[vislist[0]][solint]['clean_threshold'])+'Jy',
                       savemodel='none',parallel=parallel,
                       field=target, nfrms_multiplier=selfcal_library[vislist[0]][solint]['nfrms_multiplier'], 
-                      image_mosaic_fields_separately=False)
+                      image_mosaic_fields_separately=False,use_wproject=use_wproject)
 
              ##
              ## Do the assessment of the post- (and pre-) selfcal images.

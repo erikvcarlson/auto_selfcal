@@ -150,7 +150,7 @@ def tclean_wrapper(selfcal_library, imagename, band, scales=[0], smallscalebias 
                    parallel=False,cyclefactor=3,threshold='0.0Jy',phasecenter='',\
                    startmodel='',pblimit=0.1,pbmask=0.1,field='',datacolumn='',nfrms_multiplier=1.0, \
                    savemodel_only=False, resume=False, spw='all', image_mosaic_fields_separately=True, \
-                   store_threshold='', vis_to_image=None):
+                   store_threshold='', vis_to_image=None, use_wproject=True):
     """
     Wrapper for tclean with keywords set to values desired for the Large Program imaging
     See the CASA 6.1.1 documentation for tclean to get the definitions of all the parameters
@@ -286,7 +286,7 @@ def tclean_wrapper(selfcal_library, imagename, band, scales=[0], smallscalebias 
     if selfcal_library['am_dogrowprune'] != None:
         dogrowprune = selfcal_library['am_dogrowprune']
     wprojplanes=1
-    if band=='EVLA_L' or band =='EVLA_S':
+    if band=='EVLA_L' or band =='EVLA_S' and use_wproject == True:
        gridder='wproject'
        wplanes=384 # normalized to S-band A-config
        #scale by 75th percentile uv distance divided by A-config value

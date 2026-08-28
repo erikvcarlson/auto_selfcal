@@ -27,3 +27,6 @@ __pycache__
 _build
 
 docs/api/
+
+data_to_test
+venv
