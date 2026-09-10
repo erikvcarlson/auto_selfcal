@@ -1,4 +1,5 @@
 import sys
+import os
 sys.path.append(os.path.dirname(__file__)+"/..")
 from auto_selfcal import auto_selfcal
 import glob
@@ -13,5 +14,5 @@ except:
 
 vislist = [] # Edit manually, or leave and let auto_selfcal automatically detect.
 
-auto_selfcal(vislist ,parallel=parallel)
+auto_selfcal(vislist ,parallel=parallel,use_wproject=False)
 

@@ -286,16 +286,18 @@ def tclean_wrapper(selfcal_library, imagename, band, scales=[0], smallscalebias 
     if selfcal_library['am_dogrowprune'] != None:
         dogrowprune = selfcal_library['am_dogrowprune']
     wprojplanes=1
-    if band=='EVLA_L' or band =='EVLA_S' and use_wproject == True:
+
+    if (band=='EVLA_L' or band =='EVLA_S') and use_wproject == True:
        gridder='wproject'
        wplanes=384 # normalized to S-band A-config
        #scale by 75th percentile uv distance divided by A-config value
        wplanes=wplanes * selfcal_library['75thpct_uv']/20000.0
        if band=='EVLA_L':
           wplanes=wplanes*2.0 # compensate for 1.5 GHz being 2x longer than 3 GHz
-
-
        wprojplanes=int(wplanes)
+    if (band=='EVLA_L' or band =='EVLA_S') and use_wproject == False:
+       gridder='standard'
+       print('WARNING W-PROJECT IS TURNED OFF; WILL USE gridder="standard" IGNORING W-TERM')
     if (band=='EVLA_L' or band =='EVLA_S') and selfcal_library['obstype']=='mosaic':
        print('WARNING DETECTED VLA L- OR S-BAND MOSAIC; WILL USE gridder="mosaic" IGNORING W-TERM')
     if selfcal_library['obstype']=='mosaic':
@@ -303,6 +305,8 @@ def tclean_wrapper(selfcal_library, imagename, band, scales=[0], smallscalebias 
     else:
        if gridder !='wproject':
           gridder='standard' 
+
+
     import pprint
 
     if spw == 'all':

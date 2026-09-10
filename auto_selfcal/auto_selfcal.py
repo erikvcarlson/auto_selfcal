@@ -4,11 +4,13 @@
 # switch heirarchy of selfcal_library such that solint is at a higher level than vis. makes storage of some parameters awkward since they live
 #    in the per vis level instead of per solint
 
+from auto_selfcal import split_calibrated_final
 import numpy as np
 import sys
 import pickle
 import pprint
 import copy
+import json
 
 from .selfcal_helpers import *
 from .run_selfcal import run_selfcal
@@ -340,226 +342,289 @@ def auto_selfcal(
     None
     """
 
-    # Check that the vislist keyword is supplied correctly.
+    checkpoint_status = os.path.exists('checkpoints_auto_selfcal.pickle')
 
-    if not is_iterable(vislist):
-        print("Argument vislist must be a string or list-like. Exiting...")
-    elif type(vislist) == str:
-        vislist = [vislist]
-    elif len(vislist) == 0:
-        ##
-        ## Get list of MS files in directory
-        ##
-        vislist=glob.glob('*_target.ms')
-        if len(vislist) == 0:
-           vislist=glob.glob('*_targets.ms')   # adaptation for PL2022 output
-           if len(vislist)==0:
-              vislist=glob.glob('*_cont.ms')   # adaptation for PL2022 output
-              if len(vislist)==0:
-                 if len(glob.glob("calibrated_final.ms")) > 0:
-                     split_calibrated_final(vis=['calibrated_final.ms'])
-                 else:
-                     sys.exit('No Measurement sets found in current working directory, exiting')
-    if imsize != None:
-        if type(imsize) == int:
-           imsize=[imsize,imsize]
-    telescope=get_telescope(vislist[0])
-    n_ants=get_n_ants(vislist,telescope)
+    if checkpoint_status:
+        print("Found checkpoints_auto_selfcal.pickle, resuming from checkpoint...")
+        with open('checkpoints_auto_selfcal.pickle', 'rb') as f:
+            checkpoint = pickle.load(f)
+        step = checkpoint['step']
+
+    else:
+        print("No checkpoint found, starting from Step 1...")
+        step = 1
+        with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
+            pickle.dump({'step': step}, f)
+
+    while step < 2:
+        if step == 1:
+                print("Starting Step 1: Preparing the vislist")
+                # Check that the vislist keyword is supplied correctly.
+                if not is_iterable(vislist):
+                    print("Argument vislist must be a string or list-like. Exiting...")
+                elif type(vislist) == str:
+                    vislist = [vislist]
+                elif len(vislist) == 0:
+                    ##
+                    ## Get list of MS files in directory
+                    ##
+                    vislist=glob.glob('*_target.ms')
+                    if len(vislist) == 0:
+                        vislist=glob.glob('*_targets.ms')   # adaptation for PL2022 output
+                        if len(vislist)==0:
+                            vislist=glob.glob('*_cont.ms')   # adaptation for PL2022 output
+                            if len(vislist)==0:
+                                if len(glob.glob("calibrated_final.ms")) > 0:
+                                    split_calibrated_final(vis=['calibrated_final.ms'])
+                                else:
+                                    sys.exit('No Measurement sets found in current working directory, exiting')
+
+                if imsize != None:
+                    if type(imsize) == int:
+                        imsize=[imsize,imsize]
+
+                telescope=get_telescope(vislist[0])
+                n_ants=get_n_ants(vislist,telescope)
     
-    if iscalibrator: # if a calibrator source, automatically try shorter ap solints than inf
-        shorter_amp_solints=True
+                if iscalibrator: # if a calibrator source, automatically try shorter ap solints than inf
+                    shorter_amp_solints=True
+
+                step = 2
+
+                with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
+                    pickle.dump({
+                        'step': step,
+                        'vislist': vislist,
+                        'imsize': imsize,
+                        'iscalibrator': iscalibrator,
+                        'shorter_amp_solints': shorter_amp_solints,
+                        'telescope': telescope,
+                        'n_ants': n_ants
+                    }, f)
+        if step == 2:
+            print("Starting Step 2: Preparing the self-calibration library and plan")
+            ##
+            ## save starting flags or restore to the starting flags
+            ##
+            for vis in vislist:
+                if os.path.exists(vis+".flagversions/flags.starting_flags"):
+                    flagmanager(vis=vis, mode = 'restore', versionname = 'starting_flags', comment = 'Flag states at start of reduction')
+                else:
+                    flagmanager(vis=vis,mode='save',versionname='starting_flags')
+
+                if sort_targets_and_EBs:
+                    vislist.sort()
+
+            ## 
+            ## Find targets, assumes all targets are in all ms files for simplicity and only science targets, will fail otherwise
+            ##
+            if targets != None:
+                if type(targets) == str:
+                    targets=targets.replace(' ','').split(',')        
+
+            all_targets, targets_vis, vis_for_targets, vis_missing_fields, vis_overflagged, bands_for_targets=fetch_targets(vislist, telescope,specified_targets=targets,overlap_tol=overlap_tol)
+
+            ##
+            ## Global environment variables for control of selfcal
+            ##
+            if sort_targets_and_EBs:
+                all_targets.sort()
+
+            ##
+            ## If the user asks to run findcont, do that now
+            ##
+            if run_findcont and os.path.exists("cont.dat"):
+                if np.any([len(parse_contdotdat('cont.dat',target))['ranges'] == 0 for target in all_targets]):
+                    if not os.path.exists("cont.dat.original"):
+                        print("Found existing cont.dat, but it is missing targets. Backing that up to cont.dat.original")
+                        os.system("mv cont.dat cont.dat.original")
+                    else:
+                        print("Found existing cont.dat, but it is missing targets. A backup of the original (cont.dat.original) already exists, so not backing up again.")
+                elif run_findcont:
+                    print("cont.dat already exists and includes all targets, so running findcont is not needed. Continuing...")
+                    run_findcont=False
+
+            if run_findcont:
+                try:
+                    if 'pipeline' not in sys.modules:
+                        print("Pipeline found but not imported. Importing...")
+                        import pipeline
+                        pipeline.initcli()
+
+                    from pipeline.h.cli import h_init
+                    from pipeline.hifa.cli import hifa_importdata
+                    from pipeline.hif.cli import hif_checkproductsize, hif_makeimlist, hif_findcont
+                    print("Running findcont")
+                    h_init()
+                    hifa_importdata(vis=vislist, dbservice=False)
+                    hif_checkproductsize(maxcubesize=60.0, maxcubelimit=70.0, maxproductsize=4000.0)
+                    hif_makeimlist(specmode="mfs")
+                    hif_findcont()
+                except:
+                    print("\nWARNING: Cannot run findcont as the pipeline was not found. Please retry with a CASA version that includes the pipeline or start CASA with the --pipeline flag.\n")
+                    sys.exit(0)
 
 
+            ##
+            ## Get all of the relevant data from the MS files
+            ##
 
-    ##
-    ## save starting flags or restore to the starting flags
-    ##
-    for vis in vislist:
-        if os.path.exists(vis+".flagversions/flags.starting_flags"):
-            flagmanager(vis=vis, mode = 'restore', versionname = 'starting_flags', comment = 'Flag states at start of reduction')
-        else:
-            flagmanager(vis=vis,mode='save',versionname='starting_flags')
+            flux_threshold=1.0
+            if mos_field_drop_flux_thresh != None:
+                flux_threshold=mos_field_drop_flux_thresh
+            elif 'VLA' in telescope:
+                flux_threshold=1.5
+            elif 'ALMA' in telescope or 'ACA' in telescope:
+                flux_threshold=1.25
 
-        if sort_targets_and_EBs:
-            vislist.sort()
+            selfcal_library, selfcal_plan, gaincalibrator_dict = {}, {}, {}
+            for target in all_targets:
+                selfcal_library[target], selfcal_plan[target] = {}, {}
+                for band in vis_for_targets[target]['Bands']:
+                    target_selfcal_library, target_selfcal_plan, target_gaincalibrator_dict = prepare_selfcal([target], [band], bands_for_targets[band][target], 
+                            vis_for_targets[target][band]['vislist'], 
+                            spectral_average=spectral_average, sort_targets_and_EBs=sort_targets_and_EBs, scale_fov=scale_fov, inf_EB_gaincal_combine=inf_EB_gaincal_combine, 
+                            inf_EB_gaintype=inf_EB_gaintype, apply_cal_mode_default=apply_cal_mode_default, do_amp_selfcal=do_amp_selfcal, 
+                            usermask=usermask, usermodel=usermodel,guess_scan_combine=guess_scan_combine,max_solint=max_solint,
+                            iscalibrator=iscalibrator, do_delay_cal=do_delay_cal, shorter_amp_solints=shorter_amp_solints,
+                            imsize=imsize, cell=cell, refant=refant, debug=debug)
 
-    ## 
-    ## Find targets, assumes all targets are in all ms files for simplicity and only science targets, will fail otherwise
-    ##
-    if targets != None:
-        if type(targets) == str:
-            targets=targets.replace(' ','').split(',')        
+                    selfcal_library[target][band] = target_selfcal_library[target][band]
+                    selfcal_plan[target][band] = target_selfcal_plan[target][band]
+                    selfcal_library[target][band]['flux_threshold']=flux_threshold
+                    selfcal_library[target][band]['overlap_tol']=overlap_tol
+                    selfcal_library[target][band]['am_noisethreshold']=noisethreshold
+                    selfcal_library[target][band]['am_sidelobethreshold']=sidelobethreshold
+                    selfcal_library[target][band]['am_lownoisethreshold']=lownoisethreshold
+                    selfcal_library[target][band]['am_smoothfactor']=smoothfactor
+                    selfcal_library[target][band]['am_growiterations']=growiterations                        
+                    selfcal_library[target][band]['am_minbeamfrac']=minbeamfrac
+                    selfcal_library[target][band]['am_dogrowprune']=dogrowprune
+                    selfcal_library[target][band]['telescope']=telescope
+                    gaincalibrator_dict.update(target_gaincalibrator_dict)
 
-    all_targets, targets_vis, vis_for_targets, vis_missing_fields, vis_overflagged, bands_for_targets=fetch_targets(vislist, telescope,specified_targets=targets,overlap_tol=overlap_tol)
-
-    ##
-    ## Global environment variables for control of selfcal
-    ##
-    if sort_targets_and_EBs:
-        all_targets.sort()
-
-    ##
-    ## If the user asks to run findcont, do that now
-    ##
-    if run_findcont and os.path.exists("cont.dat"):
-        if np.any([len(parse_contdotdat('cont.dat',target))['ranges'] == 0 for target in all_targets]):
-            if not os.path.exists("cont.dat.original"):
-                print("Found existing cont.dat, but it is missing targets. Backing that up to cont.dat.original")
-                os.system("mv cont.dat cont.dat.original")
-            else:
-                print("Found existing cont.dat, but it is missing targets. A backup of the original (cont.dat.original) already exists, so not backing up again.")
-        elif run_findcont:
-            print("cont.dat already exists and includes all targets, so running findcont is not needed. Continuing...")
-            run_findcont=False
-
-    if run_findcont:
-        try:
-            if 'pipeline' not in sys.modules:
-                print("Pipeline found but not imported. Importing...")
-                import pipeline
-                pipeline.initcli()
-
-            from pipeline.h.cli import h_init
-            from pipeline.hifa.cli import hifa_importdata
-            from pipeline.hif.cli import hif_checkproductsize, hif_makeimlist, hif_findcont
-            print("Running findcont")
-            h_init()
-            hifa_importdata(vis=vislist, dbservice=False)
-            hif_checkproductsize(maxcubesize=60.0, maxcubelimit=70.0, maxproductsize=4000.0)
-            hif_makeimlist(specmode="mfs")
-            hif_findcont()
-        except:
-            print("\nWARNING: Cannot run findcont as the pipeline was not found. Please retry with a CASA version that includes the pipeline or start CASA with the --pipeline flag.\n")
-            sys.exit(0)
-
-    ##
-    ## Get all of the relevant data from the MS files
-    ##
-
-    flux_threshold=1.0
-    if mos_field_drop_flux_thresh != None:
-        flux_threshold=mos_field_drop_flux_thresh
-    elif 'VLA' in telescope:
-        flux_threshold=1.5
-    elif 'ALMA' in telescope or 'ACA' in telescope:
-        flux_threshold=1.25
-
-    selfcal_library, selfcal_plan, gaincalibrator_dict = {}, {}, {}
-    for target in all_targets:
-        selfcal_library[target], selfcal_plan[target] = {}, {}
-        for band in vis_for_targets[target]['Bands']:
-            target_selfcal_library, target_selfcal_plan, target_gaincalibrator_dict = prepare_selfcal([target], [band], bands_for_targets[band][target], 
-                    vis_for_targets[target][band]['vislist'], 
-                    spectral_average=spectral_average, sort_targets_and_EBs=sort_targets_and_EBs, scale_fov=scale_fov, inf_EB_gaincal_combine=inf_EB_gaincal_combine, 
-                    inf_EB_gaintype=inf_EB_gaintype, apply_cal_mode_default=apply_cal_mode_default, do_amp_selfcal=do_amp_selfcal, 
-                    usermask=usermask, usermodel=usermodel,guess_scan_combine=guess_scan_combine,max_solint=max_solint,
-                    iscalibrator=iscalibrator, do_delay_cal=do_delay_cal, shorter_amp_solints=shorter_amp_solints,
-                    imsize=imsize, cell=cell, refant=refant, debug=debug)
-
-            selfcal_library[target][band] = target_selfcal_library[target][band]
-            selfcal_plan[target][band] = target_selfcal_plan[target][band]
-            selfcal_library[target][band]['flux_threshold']=flux_threshold
-            selfcal_library[target][band]['overlap_tol']=overlap_tol
-            selfcal_library[target][band]['am_noisethreshold']=noisethreshold
-            selfcal_library[target][band]['am_sidelobethreshold']=sidelobethreshold
-            selfcal_library[target][band]['am_lownoisethreshold']=lownoisethreshold
-            selfcal_library[target][band]['am_smoothfactor']=smoothfactor
-            selfcal_library[target][band]['am_growiterations']=growiterations                        
-            selfcal_library[target][band]['am_minbeamfrac']=minbeamfrac
-            selfcal_library[target][band]['am_dogrowprune']=dogrowprune
-            selfcal_library[target][band]['telescope']=telescope
-            gaincalibrator_dict.update(target_gaincalibrator_dict)
-
-    with open('selfcal_library.pickle', 'wb') as handle:
-        pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    with open('selfcal_plan.pickle', 'wb') as handle:
-        pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    print('############## bands for targets after prepare selfcal #####################')
-    pprint.pprint(bands_for_targets)
-    ###################################################################################################
-    ############################# Start Actual important stuff for selfcal ############################
-    ###################################################################################################
-
-    if align_EBs:
-        for target in all_targets:
-         sani_target=sanitize_string(target)
-         for band in selfcal_library[target].keys():
-            if selfcal_library[target][band]['obstype'] == 'mosaic' or len(selfcal_library[target][band]['vislist']) == 1:
-                continue
-
-            for vis in selfcal_library[target][band]['vislist']:
-               #make images using the appropriate tclean heuristics for each telescope
-               # Because tclean doesn't deal in NF masks, the automask from the initial image is likely to contain a lot of noise unless
-               # we can get an estimate of the NF modifier for the auto-masking thresholds. To do this, we need to create a very basic mask
-               # with the dirty image. So we just use one iteration with a tiny gain so that nothing is really subtracted off.
-               tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+vis+'_dirty',
-                              band,nsigma=4.0, scales=[0],
-                              threshold='0.0Jy',niter=1, gain=0.00001,
-                              savemodel='none',parallel=parallel,
-                              field=target, vis_to_image=[vis],use_wproject=use_wproject)
-
-               dirty_SNR, dirty_RMS, dirty_NF_SNR, dirty_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_dirty.image.tt0', sani_target+'_'+band+'_'+vis+'_dirty.mask',
-                        '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'dirty', 'dirty')
-
-               tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+vis+'_initial',
-                              band,nsigma=4.0, scales=[0],
-                              threshold='theoretical_with_drmod',
-                              savemodel='modelcolumn',parallel=parallel,
-                              field=target,nfrms_multiplier=dirty_NF_RMS/dirty_RMS, vis_to_image=[vis],use_wproject=use_wproject)
-
-               initial_SNR, initial_RMS, initial_NF_SNR, initial_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_initial.image.tt0', 
-                       sani_target+'_'+band+'_'+vis+'_initial.mask', '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'orig', 'orig')
-
-        ##
-        ## Align the EBs prior to running selfcal on them.
-        ##
-
-        offsets = {}
-        for target in all_targets:
-            offsets[target] = {}
-            for band in selfcal_library[target]:
-                if selfcal_library[target][band]['obstype'] == 'mosaic' or len(selfcal_library[target][band]['vislist']) == 1:
-                    print(f"Skipping alignment of target {target} band {band} because it is a mosaic.")
-                    continue
-
-                selfcal_library[target][band]['offsets'] = align_measurement_sets(selfcal_library[target][band]['vislist'][0], selfcal_library[target][band]['vislist'], target,
-                        aquareport=aquareport, npix=max(selfcal_library[target][band]['imsize']), cell_size=float(selfcal_library[target][band]['cellsize'][0:-6]), 
-                        spwid=[selfcal_library[target][band][vis]['spwsarray'] for vis in selfcal_library[target][band]['vislist']], plot_uv_grid=False, plot_file_template=None, 
-                        suffix='', optimizer=align_optimizer)
-
-        for target in all_targets:
-         sani_target=sanitize_string(target)
-         for band in selfcal_library[target].keys():
-            if selfcal_library[target][band]['obstype'] == 'mosaic' or len(selfcal_library[target][band]['vislist']) == 1:
-                continue
-
-            for vis in selfcal_library[target][band]['vislist']:
-               #make images using the appropriate tclean heuristics for each telescope
-               # Because tclean doesn't deal in NF masks, the automask from the initial image is likely to contain a lot of noise unless
-               # we can get an estimate of the NF modifier for the auto-masking thresholds. To do this, we need to create a very basic mask
-               # with the dirty image. So we just use one iteration with a tiny gain so that nothing is really subtracted off.
-               tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+vis+'_dirty_after',
-                              band,nsigma=4.0, scales=[0],
-                              threshold='0.0Jy',niter=1, gain=0.00001,
-                              savemodel='none',parallel=parallel,
-                              field=target, vis_to_image=[vis])
-
-               dirty_SNR, dirty_RMS, dirty_NF_SNR, dirty_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_dirty_after.image.tt0', 
-                        sani_target+'_'+band+'_'+vis+'_dirty_after.mask', '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'dirty', 'dirty')
-
-               tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+vis+'_initial_after',
-                              band,nsigma=4.0, scales=[0],
-                              threshold='theoretical_with_drmod',
-                              savemodel='none',parallel=parallel,
-                              field=target,nfrms_multiplier=dirty_NF_RMS/dirty_RMS, vis_to_image=[vis])
-
-               initial_SNR, initial_RMS, initial_NF_SNR, initial_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_initial_after.image.tt0', 
-                       sani_target+'_'+band+'_'+vis+'_initial_after.mask', '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'orig', 'orig')
+            with open('selfcal_library.pickle', 'wb') as handle:
+                pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            with open('selfcal_plan.pickle', 'wb') as handle:
+                pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            print('############## bands for targets after prepare selfcal #####################')
+            print("The value for w-project is: ", use_wproject)
+            pprint.pprint(bands_for_targets)
 
 
-        if debug:
-            print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
+            step = 3
 
+            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
+                pickle.dump({
+                    'step': 3,
+
+                    # Step 1 variables
+                    'vislist': vislist,
+                    'imsize': imsize,
+                    'iscalibrator': iscalibrator,
+                    'shorter_amp_solints': shorter_amp_solints,
+                    'telescope': telescope,
+                    'n_ants': n_ants,
+
+                    # Step 2 variables
+                    'all_targets': all_targets,
+                    'targets_vis': targets_vis,
+                    'vis_for_targets': vis_for_targets,
+                    'vis_missing_fields': vis_missing_fields,
+                    'vis_overflagged': vis_overflagged,
+                    'bands_for_targets': bands_for_targets,
+                    'flux_threshold': flux_threshold,
+                    'gaincalibrator_dict': gaincalibrator_dict
+                }, f) 
+
+        if step == 3:
+            print("Starting Step 3: Running the self-calibration process")
+            ###################################################################################################
+            ############################# Start Actual important stuff for selfcal ############################
+            ###################################################################################################
+
+            if align_EBs:
+                for target in all_targets:
+                    sani_target=sanitize_string(target)
+                    for band in selfcal_library[target].keys():
+                        if selfcal_library[target][band]['obstype'] == 'mosaic' or len(selfcal_library[target][band]['vislist']) == 1:
+                            continue
+                    for vis in selfcal_library[target][band]['vislist']:
+                    
+                        #make images using the appropriate tclean heuristics for each telescope
+                        # Because tclean doesn't deal in NF masks, the automask from the initial image is likely to contain a lot of noise unless
+                        # we can get an estimate of the NF modifier for the auto-masking thresholds. To do this, we need to create a very basic mask
+                        # with the dirty image. So we just use one iteration with a tiny gain so that nothing is really subtracted off.
+                        tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+vis+'_dirty',
+                                        band,nsigma=4.0, scales=[0],
+                                        threshold='0.0Jy',niter=1, gain=0.00001,
+                                        savemodel='none',parallel=parallel,
+                                        field=target, vis_to_image=[vis],use_wproject=use_wproject)
+
+                        dirty_SNR, dirty_RMS, dirty_NF_SNR, dirty_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_dirty.image.tt0', sani_target+'_'+band+'_'+vis+'_dirty.mask',
+                                    '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'dirty', 'dirty')
+
+                        tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+vis+'_initial',
+                                        band,nsigma=4.0, scales=[0],
+                                        threshold='theoretical_with_drmod',
+                                        savemodel='modelcolumn',parallel=parallel,
+                                        field=target,nfrms_multiplier=dirty_NF_RMS/dirty_RMS, vis_to_image=[vis],use_wproject=use_wproject)
+
+                        initial_SNR, initial_RMS, initial_NF_SNR, initial_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_initial.image.tt0', 
+                                sani_target+'_'+band+'_'+vis+'_initial.mask', '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'orig', 'orig')
+
+                ##
+                ## Align the EBs prior to running selfcal on them.
+                ##
+
+                offsets = {}
+                for target in all_targets:
+                    offsets[target] = {}
+                    for band in selfcal_library[target]:
+                        if selfcal_library[target][band]['obstype'] == 'mosaic' or len(selfcal_library[target][band]['vislist']) == 1:
+                            print(f"Skipping alignment of target {target} band {band} because it is a mosaic.")
+                            continue
+
+                        selfcal_library[target][band]['offsets'] = align_measurement_sets(selfcal_library[target][band]['vislist'][0], selfcal_library[target][band]['vislist'], target,
+                                aquareport=aquareport, npix=max(selfcal_library[target][band]['imsize']), cell_size=float(selfcal_library[target][band]['cellsize'][0:-6]), 
+                                spwid=[selfcal_library[target][band][vis]['spwsarray'] for vis in selfcal_library[target][band]['vislist']], plot_uv_grid=False, plot_file_template=None, 
+                                suffix='', optimizer=align_optimizer)
+
+                for target in all_targets:
+                    sani_target=sanitize_string(target)
+                    for band in selfcal_library[target].keys():
+                        if selfcal_library[target][band]['obstype'] == 'mosaic' or len(selfcal_library[target][band]['vislist']) == 1:
+                            continue
+
+                    for vis in selfcal_library[target][band]['vislist']:
+                        #make images using the appropriate tclean heuristics for each telescope
+                        # Because tclean doesn't deal in NF masks, the automask from the initial image is likely to contain a lot of noise unless
+                        # we can get an estimate of the NF modifier for the auto-masking thresholds. To do this, we need to create a very basic mask
+                        # with the dirty image. So we just use one iteration with a tiny gain so that nothing is really subtracted off.
+                        tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+vis+'_dirty_after',
+                                    band,nsigma=4.0, scales=[0],
+                                    threshold='0.0Jy',niter=1, gain=0.00001,
+                                    savemodel='none',parallel=parallel,
+                                    field=target, vis_to_image=[vis],use_wproject=use_wproject)
+
+                        dirty_SNR, dirty_RMS, dirty_NF_SNR, dirty_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_dirty_after.image.tt0', 
+                                sani_target+'_'+band+'_'+vis+'_dirty_after.mask', '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'dirty', 'dirty')
+
+                        tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+vis+'_initial_after',
+                                    band,nsigma=4.0, scales=[0],
+                                    threshold='theoretical_with_drmod',
+                                    savemodel='none',parallel=parallel,
+                                    field=target,nfrms_multiplier=dirty_NF_RMS/dirty_RMS, vis_to_image=[vis],use_wproject=use_wproject)
+
+                        initial_SNR, initial_RMS, initial_NF_SNR, initial_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_initial_after.image.tt0', 
+                            sani_target+'_'+band+'_'+vis+'_initial_after.mask', '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'orig', 'orig')
+
+
+                if debug:
+                    print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
+
+
+"""
     ##
     ## create initial images for each target to evaluate SNR and beam
     ## replicates what a preceding hif_makeimages would do
@@ -840,16 +905,6 @@ def auto_selfcal(
                         sani_target+'_'+band+'_'+str(spw)+'_initial.image.tt0', sani_target+'_'+band+'_'+str(spw)+'_final.mask',
                         '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'orig', 'orig', spw=spw)
 
-
-
-
-
-
-
-
-
-
-
     ##
     ## Print final results
     ##
@@ -971,3 +1026,5 @@ def auto_selfcal(
                 generate_weblog(new_selfcal_library,new_selfcal_plan,directory='weblog/'+target+'_field-by-field')
 
 
+"""
+   
