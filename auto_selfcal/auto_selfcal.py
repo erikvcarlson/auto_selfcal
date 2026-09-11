@@ -11,6 +11,8 @@ import pickle
 import pprint
 import copy
 import json
+import glob
+import shutil
 
 from .selfcal_helpers import *
 from .run_selfcal import run_selfcal
@@ -342,6 +344,76 @@ def auto_selfcal(
     None
     """
 
+    def _list_step_paths():
+        """
+        Record the current filesystem state for the working directory.
+        Uses relative paths so the snapshot is portable within the same run directory.
+        """
+        paths = set()
+
+        for entry in os.listdir('.'):
+            if entry in ['.', '..']:
+                continue
+            paths.add(entry)
+
+        return paths
+
+
+    def save_step_files_snapshot(step):
+        """
+        Save the filesystem state at the beginning of a step.
+        """
+        snapshot = {
+            'step': step,
+            'paths': _list_step_paths()
+        }
+        with open(f'checkpoint_files_step_{step}.pickle', 'wb') as f:
+            pickle.dump(snapshot, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+    def restore_step_files_snapshot(step, debug=False):
+        """
+        Remove files/directories created after the saved snapshot for this step.
+        This restores the working directory to the path inventory present at step start.
+        """
+        snapshot_file = f'checkpoint_files_step_{step}.pickle'
+        if not os.path.exists(snapshot_file):
+            if debug:
+                print(f"No filesystem snapshot found for step {step}, nothing to restore.")
+            return
+
+        with open(snapshot_file, 'rb') as f:
+            snapshot = pickle.load(f)
+
+        old_paths = set(snapshot['paths'])
+        current_paths = _list_step_paths()
+
+        new_paths = sorted(current_paths - old_paths, reverse=True)
+
+        # Never delete checkpoint/state files needed to recover unless you explicitly want that behavior.
+        protected = {
+            'checkpoints_auto_selfcal.pickle',
+            'selfcal_library.pickle',
+            'selfcal_plan.pickle',
+            snapshot_file
+        }
+
+        for path in new_paths:
+            if path in protected:
+                continue
+
+            try:
+                if os.path.isdir(path) and not os.path.islink(path):
+                    shutil.rmtree(path)
+                    if debug:
+                        print(f"Removed directory created during failed step: {path}")
+                elif os.path.exists(path):
+                    os.remove(path)
+                    if debug:
+                        print(f"Removed file created during failed step: {path}")
+            except Exception as exc:
+                print(f"WARNING: Could not remove path during step-{step} restore: {path} ({exc})")
+
     checkpoint_status = os.path.exists('checkpoints_auto_selfcal.pickle')
 
     if checkpoint_status:
@@ -349,6 +421,40 @@ def auto_selfcal(
         with open('checkpoints_auto_selfcal.pickle', 'rb') as f:
             checkpoint = pickle.load(f)
         step = checkpoint['step']
+        print("Found checkpoints_auto_selfcal.pickle, resuming from checkpoint " + str(checkpoint['step']) + ":")
+
+        vislist = checkpoint.get('vislist', vislist)
+        imsize = checkpoint.get('imsize', imsize)
+        iscalibrator = checkpoint.get('iscalibrator', iscalibrator)
+        shorter_amp_solints = checkpoint.get('shorter_amp_solints', shorter_amp_solints)
+        telescope = checkpoint.get('telescope', None)
+        n_ants = checkpoint.get('n_ants', None)
+
+        all_targets = checkpoint.get('all_targets', None)
+        targets_vis = checkpoint.get('targets_vis', None)
+        vis_for_targets = checkpoint.get('vis_for_targets', None)
+        vis_missing_fields = checkpoint.get('vis_missing_fields', None)
+        vis_overflagged = checkpoint.get('vis_overflagged', None)
+        bands_for_targets = checkpoint.get('bands_for_targets', None)
+        flux_threshold = checkpoint.get('flux_threshold', None)
+        gaincalibrator_dict = checkpoint.get('gaincalibrator_dict', {})
+        dirty_SNR = checkpoint.get('dirty_SNR', None)
+        dirty_RMS = checkpoint.get('dirty_RMS', None)
+        dirty_NF_SNR = checkpoint.get('dirty_NF_SNR', None)
+        dirty_NF_RMS = checkpoint.get('dirty_NF_RMS', None)
+        initial_SNR = checkpoint.get('initial_SNR', None)
+        initial_RMS = checkpoint.get('initial_RMS', None)
+        initial_NF_SNR = checkpoint.get('initial_NF_SNR', None)
+        initial_NF_RMS = checkpoint.get('initial_NF_RMS', None)
+        fallback_fields = checkpoint.get('fallback_fields', None)
+        calibrators = checkpoint.get('calibrators', None)
+        suffix = checkpoint.get('suffix', None)
+
+        if step >= 3 and os.path.exists('selfcal_library.pickle') and os.path.exists('selfcal_plan.pickle'):
+            with open('selfcal_library.pickle', 'rb') as handle:
+                selfcal_library = pickle.load(handle)
+            with open('selfcal_plan.pickle', 'rb') as handle:
+                selfcal_plan = pickle.load(handle)
 
     else:
         print("No checkpoint found, starting from Step 1...")
@@ -356,52 +462,84 @@ def auto_selfcal(
         with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
             pickle.dump({'step': step}, f)
 
-    while step < 2:
+    while step < 13:
         if step == 1:
-                print("Starting Step 1: Preparing the vislist")
-                # Check that the vislist keyword is supplied correctly.
-                if not is_iterable(vislist):
-                    print("Argument vislist must be a string or list-like. Exiting...")
-                elif type(vislist) == str:
-                    vislist = [vislist]
-                elif len(vislist) == 0:
-                    ##
-                    ## Get list of MS files in directory
-                    ##
-                    vislist=glob.glob('*_target.ms')
-                    if len(vislist) == 0:
-                        vislist=glob.glob('*_targets.ms')   # adaptation for PL2022 output
+            save_step_files_snapshot(step)
+            print("Starting Step 1: Preparing the vislist")
+            # Check that the vislist keyword is supplied correctly.
+            if not is_iterable(vislist):
+                print("Argument vislist must be a string or list-like. Exiting...")
+            elif type(vislist) == str:
+                vislist = [vislist]
+            elif len(vislist) == 0:
+                ##
+                ## Get list of MS files in directory
+                ##
+                vislist=glob.glob('*_target.ms')
+                if len(vislist) == 0:
+                    vislist=glob.glob('*_targets.ms')   # adaptation for PL2022 output
+                    if len(vislist)==0:
+                        vislist=glob.glob('*_cont.ms')   # adaptation for PL2022 output
                         if len(vislist)==0:
-                            vislist=glob.glob('*_cont.ms')   # adaptation for PL2022 output
-                            if len(vislist)==0:
-                                if len(glob.glob("calibrated_final.ms")) > 0:
-                                    split_calibrated_final(vis=['calibrated_final.ms'])
-                                else:
-                                    sys.exit('No Measurement sets found in current working directory, exiting')
+                            if len(glob.glob("calibrated_final.ms")) > 0:
+                                split_calibrated_final(vis=['calibrated_final.ms'])
+                            else:
+                                sys.exit('No Measurement sets found in current working directory, exiting')
 
-                if imsize != None:
-                    if type(imsize) == int:
-                        imsize=[imsize,imsize]
+            if imsize != None:
+                if type(imsize) == int:
+                    imsize=[imsize,imsize]
 
-                telescope=get_telescope(vislist[0])
-                n_ants=get_n_ants(vislist,telescope)
-    
-                if iscalibrator: # if a calibrator source, automatically try shorter ap solints than inf
-                    shorter_amp_solints=True
+            telescope=get_telescope(vislist[0])
+            n_ants=get_n_ants(vislist,telescope)
 
-                step = 2
+            if iscalibrator: # if a calibrator source, automatically try shorter ap solints than inf
+                shorter_amp_solints=True
 
-                with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
-                    pickle.dump({
-                        'step': step,
-                        'vislist': vislist,
-                        'imsize': imsize,
-                        'iscalibrator': iscalibrator,
-                        'shorter_amp_solints': shorter_amp_solints,
-                        'telescope': telescope,
-                        'n_ants': n_ants
-                    }, f)
+            step = 2
+
+            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
+                pickle.dump({
+                    'step': 2,
+
+                    'vislist': vislist if 'vislist' in locals() else None,
+                    'imsize': imsize if 'imsize' in locals() else None,
+                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
+                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
+                    'telescope': telescope if 'telescope' in locals() else None,
+                    'n_ants': n_ants if 'n_ants' in locals() else None,
+
+                    'all_targets': all_targets if 'all_targets' in locals() else None,
+                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
+                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
+                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
+                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
+                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
+                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
+                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
+
+                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
+                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
+                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
+                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
+                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
+                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
+                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
+                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
+                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
+                    'calibrators': calibrators if 'calibrators' in locals() else None,
+                    'suffix': suffix if 'suffix' in locals() else None
+                }, f)
+            continue
+
         if step == 2:
+            
+            step_snapshot_file = f'checkpoint_files_step_{step}.pickle'
+            if os.path.exists(step_snapshot_file):
+                restore_step_files_snapshot(step, debug=debug)
+            save_step_files_snapshot(step)
+
+
             print("Starting Step 2: Preparing the self-calibration library and plan")
             ##
             ## save starting flags or restore to the starting flags
@@ -412,8 +550,8 @@ def auto_selfcal(
                 else:
                     flagmanager(vis=vis,mode='save',versionname='starting_flags')
 
-                if sort_targets_and_EBs:
-                    vislist.sort()
+            if sort_targets_and_EBs:
+                vislist.sort()
 
             ## 
             ## Find targets, assumes all targets are in all ms files for simplicity and only science targets, will fail otherwise
@@ -511,37 +649,56 @@ def auto_selfcal(
             print("The value for w-project is: ", use_wproject)
             pprint.pprint(bands_for_targets)
 
-
             step = 3
 
             with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
                 pickle.dump({
                     'step': 3,
 
-                    # Step 1 variables
-                    'vislist': vislist,
-                    'imsize': imsize,
-                    'iscalibrator': iscalibrator,
-                    'shorter_amp_solints': shorter_amp_solints,
-                    'telescope': telescope,
-                    'n_ants': n_ants,
+                    'vislist': vislist if 'vislist' in locals() else None,
+                    'imsize': imsize if 'imsize' in locals() else None,
+                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
+                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
+                    'telescope': telescope if 'telescope' in locals() else None,
+                    'n_ants': n_ants if 'n_ants' in locals() else None,
 
-                    # Step 2 variables
-                    'all_targets': all_targets,
-                    'targets_vis': targets_vis,
-                    'vis_for_targets': vis_for_targets,
-                    'vis_missing_fields': vis_missing_fields,
-                    'vis_overflagged': vis_overflagged,
-                    'bands_for_targets': bands_for_targets,
-                    'flux_threshold': flux_threshold,
-                    'gaincalibrator_dict': gaincalibrator_dict
-                }, f) 
+                    'all_targets': all_targets if 'all_targets' in locals() else None,
+                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
+                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
+                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
+                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
+                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
+                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
+                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
+
+                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
+                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
+                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
+                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
+                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
+                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
+                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
+                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
+                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
+                    'calibrators': calibrators if 'calibrators' in locals() else None,
+                    'suffix': suffix if 'suffix' in locals() else None
+                }, f)
+            continue
 
         if step == 3:
+            
+            step_snapshot_file = f'checkpoint_files_step_{step}.pickle'
+            if os.path.exists(step_snapshot_file):
+                restore_step_files_snapshot(step, debug=debug)
+            save_step_files_snapshot(step)
+
+
             print("Starting Step 3: Running the self-calibration process")
             ###################################################################################################
             ############################# Start Actual important stuff for selfcal ############################
             ###################################################################################################
+            dirty_SNR, dirty_RMS, dirty_NF_SNR, dirty_NF_RMS = None, None, None, None
+            initial_SNR, initial_RMS, initial_NF_SNR, initial_NF_RMS = None, None, None, None
 
             if align_EBs:
                 for target in all_targets:
@@ -549,29 +706,29 @@ def auto_selfcal(
                     for band in selfcal_library[target].keys():
                         if selfcal_library[target][band]['obstype'] == 'mosaic' or len(selfcal_library[target][band]['vislist']) == 1:
                             continue
-                    for vis in selfcal_library[target][band]['vislist']:
-                    
-                        #make images using the appropriate tclean heuristics for each telescope
-                        # Because tclean doesn't deal in NF masks, the automask from the initial image is likely to contain a lot of noise unless
-                        # we can get an estimate of the NF modifier for the auto-masking thresholds. To do this, we need to create a very basic mask
-                        # with the dirty image. So we just use one iteration with a tiny gain so that nothing is really subtracted off.
-                        tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+vis+'_dirty',
-                                        band,nsigma=4.0, scales=[0],
-                                        threshold='0.0Jy',niter=1, gain=0.00001,
-                                        savemodel='none',parallel=parallel,
-                                        field=target, vis_to_image=[vis],use_wproject=use_wproject)
 
-                        dirty_SNR, dirty_RMS, dirty_NF_SNR, dirty_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_dirty.image.tt0', sani_target+'_'+band+'_'+vis+'_dirty.mask',
-                                    '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'dirty', 'dirty')
+                        for vis in selfcal_library[target][band]['vislist']:
+                            #make images using the appropriate tclean heuristics for each telescope
+                            # Because tclean doesn't deal in NF masks, the automask from the initial image is likely to contain a lot of noise unless
+                            # we can get an estimate of the NF modifier for the auto-masking thresholds. To do this, we need to create a very basic mask
+                            # with the dirty image. So we just use one iteration with a tiny gain so that nothing is really subtracted off.
+                            tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+vis+'_dirty',
+                                            band,nsigma=4.0, scales=[0],
+                                            threshold='0.0Jy',niter=1, gain=0.00001,
+                                            savemodel='none',parallel=parallel,
+                                            field=target, vis_to_image=[vis],use_wproject=use_wproject)
 
-                        tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+vis+'_initial',
-                                        band,nsigma=4.0, scales=[0],
-                                        threshold='theoretical_with_drmod',
-                                        savemodel='modelcolumn',parallel=parallel,
-                                        field=target,nfrms_multiplier=dirty_NF_RMS/dirty_RMS, vis_to_image=[vis],use_wproject=use_wproject)
+                            dirty_SNR, dirty_RMS, dirty_NF_SNR, dirty_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_dirty.image.tt0', sani_target+'_'+band+'_'+vis+'_dirty.mask',
+                                        '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'dirty', 'dirty')
 
-                        initial_SNR, initial_RMS, initial_NF_SNR, initial_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_initial.image.tt0', 
-                                sani_target+'_'+band+'_'+vis+'_initial.mask', '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'orig', 'orig')
+                            tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+vis+'_initial',
+                                            band,nsigma=4.0, scales=[0],
+                                            threshold='theoretical_with_drmod',
+                                            savemodel='modelcolumn',parallel=parallel,
+                                            field=target,nfrms_multiplier=dirty_NF_RMS/dirty_RMS, vis_to_image=[vis],use_wproject=use_wproject)
+
+                            initial_SNR, initial_RMS, initial_NF_SNR, initial_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_initial.image.tt0', 
+                                    sani_target+'_'+band+'_'+vis+'_initial.mask', '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'orig', 'orig')
 
                 ##
                 ## Align the EBs prior to running selfcal on them.
@@ -596,435 +753,1004 @@ def auto_selfcal(
                         if selfcal_library[target][band]['obstype'] == 'mosaic' or len(selfcal_library[target][band]['vislist']) == 1:
                             continue
 
-                    for vis in selfcal_library[target][band]['vislist']:
-                        #make images using the appropriate tclean heuristics for each telescope
-                        # Because tclean doesn't deal in NF masks, the automask from the initial image is likely to contain a lot of noise unless
-                        # we can get an estimate of the NF modifier for the auto-masking thresholds. To do this, we need to create a very basic mask
-                        # with the dirty image. So we just use one iteration with a tiny gain so that nothing is really subtracted off.
-                        tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+vis+'_dirty_after',
-                                    band,nsigma=4.0, scales=[0],
-                                    threshold='0.0Jy',niter=1, gain=0.00001,
-                                    savemodel='none',parallel=parallel,
-                                    field=target, vis_to_image=[vis],use_wproject=use_wproject)
+                        for vis in selfcal_library[target][band]['vislist']:
+                            #make images using the appropriate tclean heuristics for each telescope
+                            # Because tclean doesn't deal in NF masks, the automask from the initial image is likely to contain a lot of noise unless
+                            # we can get an estimate of the NF modifier for the auto-masking thresholds. To do this, we need to create a very basic mask
+                            # with the dirty image. So we just use one iteration with a tiny gain so that nothing is really subtracted off.
+                            tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+vis+'_dirty_after',
+                                        band,nsigma=4.0, scales=[0],
+                                        threshold='0.0Jy',niter=1, gain=0.00001,
+                                        savemodel='none',parallel=parallel,
+                                        field=target, vis_to_image=[vis],use_wproject=use_wproject)
 
-                        dirty_SNR, dirty_RMS, dirty_NF_SNR, dirty_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_dirty_after.image.tt0', 
-                                sani_target+'_'+band+'_'+vis+'_dirty_after.mask', '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'dirty', 'dirty')
+                            dirty_SNR, dirty_RMS, dirty_NF_SNR, dirty_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_dirty_after.image.tt0', 
+                                    sani_target+'_'+band+'_'+vis+'_dirty_after.mask', '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'dirty', 'dirty')
 
-                        tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+vis+'_initial_after',
-                                    band,nsigma=4.0, scales=[0],
-                                    threshold='theoretical_with_drmod',
-                                    savemodel='none',parallel=parallel,
-                                    field=target,nfrms_multiplier=dirty_NF_RMS/dirty_RMS, vis_to_image=[vis],use_wproject=use_wproject)
+                            tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+vis+'_initial_after',
+                                        band,nsigma=4.0, scales=[0],
+                                        threshold='theoretical_with_drmod',
+                                        savemodel='none',parallel=parallel,
+                                        field=target,nfrms_multiplier=dirty_NF_RMS/dirty_RMS, vis_to_image=[vis],use_wproject=use_wproject)
 
-                        initial_SNR, initial_RMS, initial_NF_SNR, initial_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_initial_after.image.tt0', 
-                            sani_target+'_'+band+'_'+vis+'_initial_after.mask', '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'orig', 'orig')
-
+                            initial_SNR, initial_RMS, initial_NF_SNR, initial_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+vis+'_initial_after.image.tt0', 
+                                sani_target+'_'+band+'_'+vis+'_initial_after.mask', '', selfcal_library[target][band], (telescope != 'ACA' or aca_use_nfmask), 'orig', 'orig')
 
                 if debug:
                     print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
 
-
-"""
-    ##
-    ## create initial images for each target to evaluate SNR and beam
-    ## replicates what a preceding hif_makeimages would do
-    ## Enables before/after comparison and thresholds to be calculated
-    ## based on the achieved S/N in the real data
-    ##
-    for target in selfcal_library:
-     sani_target=sanitize_string(target)
-     for band in selfcal_library[target]:
-       #make images using the appropriate tclean heuristics for each telescope
-       # Because tclean doesn't deal in NF masks, the automask from the initial image is likely to contain a lot of noise unless
-       # we can get an estimate of the NF modifier for the auto-masking thresholds. To do this, we need to create a very basic mask
-       # with the dirty image. So we just use one iteration with a tiny gain so that nothing is really subtracted off.
-       tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_dirty',
-                      band,nsigma=4.0, scales=[0],
-                      threshold='0.0Jy',niter=1, gain=0.00001,
-                      savemodel='none',parallel=parallel,
-                      field=target,use_wproject=use_wproject)
-
-       dirty_SNR, dirty_RMS, dirty_NF_SNR, dirty_NF_RMS = get_image_stats(sani_target+'_'+band+'_dirty.image.tt0', sani_target+'_'+band+'_dirty.mask',
-                '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] != 'ACA' or aca_use_nfmask), 'dirty', 'dirty')
-
-       mosaic_dirty_SNR, mosaic_dirty_RMS, mosaic_dirty_NF_SNR, mosaic_dirty_NF_RMS = {}, {}, {}, {}
-       for fid in selfcal_library[target][band]['sub-fields']:
-           if selfcal_library[target][band]['obstype'] == 'mosaic':
-               imagename = sani_target+'_field_'+str(fid)+'_'+band+'_dirty.image.tt0'
-           else:
-               imagename = sani_target+'_'+band+'_dirty.image.tt0'
-
-           mosaic_dirty_SNR[fid], mosaic_dirty_RMS[fid], mosaic_dirty_NF_SNR[fid], mosaic_dirty_NF_RMS[fid] = get_image_stats(imagename, 
-                   imagename.replace('image.tt0','mask'), '', selfcal_library[target][band][fid], (telescope != 'ACA' or aca_use_nfmask), 'dirty', 'dirty',
-                   mosaic_sub_field=selfcal_library[target][band]["obstype"]=="mosaic")
-
-       tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_initial',
-                      band,nsigma=4.0, scales=[0],
-                      threshold='theoretical_with_drmod',
-                      savemodel='none',parallel=parallel,
-                      field=target,nfrms_multiplier=dirty_NF_RMS/dirty_RMS,store_threshold='orig', use_wproject=use_wproject)
-
-       initial_SNR, initial_RMS, initial_NF_SNR, initial_NF_RMS = get_image_stats(sani_target+'_'+band+'_initial.image.tt0', 
-               sani_target+'_'+band+'_initial.mask', '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] != 'ACA' or aca_use_nfmask), 'orig', 'orig')
-
-       mosaic_initial_SNR, mosaic_initial_RMS, mosaic_initial_NF_SNR, mosaic_initial_NF_RMS = {}, {}, {}, {}
-       for fid in selfcal_library[target][band]['sub-fields']:
-           if selfcal_library[target][band]['obstype'] == 'mosaic':
-               imagename = sani_target+'_field_'+str(fid)+'_'+band+'_initial.image.tt0'
-           else:
-               imagename = sani_target+'_'+band+'_initial.image.tt0'
-
-           mosaic_initial_SNR[fid], mosaic_initial_RMS[fid], mosaic_initial_NF_SNR[fid],mosaic_initial_NF_RMS[fid] = get_image_stats(imagename, 
-                   imagename.replace('image.tt0','mask'), '', selfcal_library[target][band][fid], (selfcal_library[target][band]['telescope'] != 'ACA' or aca_use_nfmask), 'orig', 'orig',
-                   mosaic_sub_field=selfcal_library[target][band]["obstype"]=="mosaic")
-
-       if ("VLA" in selfcal_library[target][band]['telescope'] or selfcal_library[target][band]['telescope'] == 'VLBA') and "clean_threshold_orig" not in selfcal_library[target][band]:
-                 selfcal_library[target][band]['clean_threshold_orig']=4.0*initial_RMS
-
-       if selfcal_library[target][band]['nterms'] == 1:  # updated nterms if needed based on S/N and fracbw
-          selfcal_library[target][band]['nterms']=check_image_nterms(selfcal_library[target][band]['fracbw'],selfcal_library[target][band]['SNR_orig'])
-
-       selfcal_library[target][band]['RMS_curr']=initial_RMS
-       selfcal_library[target][band]['RMS_NF_curr']=initial_NF_RMS if initial_NF_RMS > 0 else initial_RMS
-
-       for fid in selfcal_library[target][band]['sub-fields']:
-           if selfcal_library[target][band][fid]['SNR_orig'] > 500.0:
-              selfcal_library[target][band][fid]['nterms']=2
-
-           selfcal_library[target][band][fid]['RMS_curr']=mosaic_initial_RMS[fid]
-           selfcal_library[target][band][fid]['RMS_NF_curr']=mosaic_initial_NF_RMS[fid] if mosaic_initial_NF_RMS[fid] > 0 else mosaic_initial_RMS[fid]
-
-     #update selfcal library after each
-     with open('selfcal_library.pickle', 'wb') as handle:
-        pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-    import json
-
-    class NpEncoder(json.JSONEncoder):
-        def default(self, obj):
-            if isinstance(obj, np.integer):
-                return int(obj)
-            if isinstance(obj, np.floating):
-                return float(obj)
-            if isinstance(obj, np.ndarray):
-                return obj.tolist()
-            return json.JSONEncoder.default(self, obj)
-
-    if debug:
-        print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
-
-    ####MAKE DIRTY PER SPW IMAGES TO PROPERLY ASSESS DR MODIFIERS
-    ##
-    ## Make a initial image per spw images to assess overall improvement
-    ##   
-
-    if check_all_spws:
-       for target in selfcal_library:
-          sani_target=sanitize_string(target)
-          for band in selfcal_library[target].keys():
-             #potential place where diff spws for different VLA EBs could cause problems
-             for spw in selfcal_library[target][band]['spw_map']:
-                keylist=selfcal_library[target][band]['per_spw_stats'].keys()
-                if spw not in keylist:
-                   selfcal_library[target][band]['per_spw_stats'][spw]={}
-                tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+str(spw)+'_dirty',
-                      band,nsigma=4.0, scales=[0],
-                      threshold='0.0Jy',niter=1,gain=0.00001,
-                      savemodel='none',parallel=parallel,
-                      field=target,spw=spw,use_wproject=use_wproject)
-
-                dirty_SNR, dirty_RMS, dirty_per_spw_NF_SNR, dirty_per_spw_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+str(spw)+
-                        '_dirty.image.tt0', sani_target+'_'+band+'_'+str(spw)+'_dirty.mask','', selfcal_library[target][band], 
-                        (selfcal_library[target][band]['telescope'] != 'ACA' or aca_use_nfmask), 'dirty', 'dirty', spw=spw)
-
-                tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+str(spw)+'_initial',\
-                           band,nsigma=4.0, threshold='theoretical_with_drmod',scales=[0],\
-                           savemodel='none',parallel=parallel,\
-                           field=target,datacolumn='corrected',\
-                           spw=spw,nfrms_multiplier=dirty_per_spw_NF_RMS/dirty_RMS,use_wproject=use_wproject)
-
-                per_spw_SNR, per_spw_RMS, initial_per_spw_NF_SNR, initial_per_spw_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+str(spw)+
-                        '_initial.image.tt0', sani_target+'_'+band+'_'+str(spw)+'_initial.mask', '', selfcal_library[target][band], 
-                        (selfcal_library[target][band]['telescope'] != 'ACA' or aca_use_nfmask), 'orig', 'orig', spw=spw)
-
-
-
-
-
-    ##
-    ## estimate per scan/EB S/N using time on source and median scan times
-    ##
-
-    get_SNR_self(selfcal_library,selfcal_plan,n_ants,inf_EB_gaincal_combine,inf_EB_gaintype)
-
-    ##
-    ## Set clean selfcal thresholds
-    ### Open question about determining the starting and progression of clean threshold for
-    ### each iteration
-    ### Peak S/N > 100; SNR/15 for first, successivly reduce to 3.0 sigma through each iteration?
-    ### Peak S/N < 100; SNR/10.0 
-    ##
-    ## Switch to a sensitivity for low frequency that is based on the residuals of the initial image for the
-    # first couple rounds and then switch to straight nsigma? Determine based on fraction of pixels that the # initial mask covers to judge very extended sources?
-
-    set_clean_thresholds(selfcal_library, selfcal_plan, dividing_factor=dividing_factor, rel_thresh_scaling=rel_thresh_scaling, telescope=selfcal_library[target][band]['telescope'])
-
-    plan_selfcal_per_solint(selfcal_library, selfcal_plan,optimize_spw_combine=optimize_spw_combine)
-    ##
-    ## Save self-cal library
-    ##
-
-    with open('selfcal_library.pickle', 'wb') as handle:
-        pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    with open('selfcal_plan.pickle', 'wb') as handle:
-        pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    ##
-    ## Begin Self-cal loops
-    ##
-    for target in selfcal_library:
-     for band in selfcal_library[target].keys():
-       run_selfcal(selfcal_library[target][band], selfcal_plan[target][band], target, band, n_ants, \
-               gaincal_minsnr=gaincal_minsnr, gaincal_unflag_minsnr=gaincal_unflag_minsnr, minsnr_to_proceed=minsnr_to_proceed, delta_beam_thresh=delta_beam_thresh, do_amp_selfcal=do_amp_selfcal, \
-               inf_EB_gaincal_combine=inf_EB_gaincal_combine, inf_EB_gaintype=inf_EB_gaintype, unflag_only_lbants=unflag_only_lbants, \
-               unflag_only_lbants_onlyap=unflag_only_lbants_onlyap, calonly_max_flagged=calonly_max_flagged, \
-               second_iter_solmode=second_iter_solmode, unflag_fb_to_prev_solint=unflag_fb_to_prev_solint, rerank_refants=rerank_refants, \
-               gaincalibrator_dict=gaincalibrator_dict, allow_gain_interpolation=allow_gain_interpolation, guess_scan_combine=guess_scan_combine, \
-               aca_use_nfmask=aca_use_nfmask,debug=debug,spectral_solution_fraction=spectral_solution_fraction,use_wproject=use_wproject)
-
-    if debug:
-        print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
-
-
-    if allow_cocal:
-        fallback_fields, calibrators = prepare_cocal(selfcal_library, selfcal_plan, inf_EB_gaincal_combine, inf_EB_gaintype)
-        ##
-        ## Begin fallback self-cal loops
-        ##
-        for target in selfcal_library:
-         for band in selfcal_library[target].keys():
-           if target not in fallback_fields[band]:
-               continue
-        
-           run_selfcal(selfcal_library[target][band], selfcal_plan[target][band], target, band, n_ants, \
-                   gaincal_minsnr=gaincal_minsnr, gaincal_unflag_minsnr=gaincal_unflag_minsnr, minsnr_to_proceed=minsnr_to_proceed, delta_beam_thresh=delta_beam_thresh, do_amp_selfcal=do_amp_selfcal, \
-                   inf_EB_gaincal_combine=inf_EB_gaincal_combine, inf_EB_gaintype=inf_EB_gaintype, unflag_only_lbants=unflag_only_lbants, \
-                   unflag_only_lbants_onlyap=unflag_only_lbants_onlyap, calonly_max_flagged=calonly_max_flagged, \
-                   second_iter_solmode=second_iter_solmode, unflag_fb_to_prev_solint=unflag_fb_to_prev_solint, rerank_refants=rerank_refants, \
-                   mode="cocal", calibrators=calibrators, gaincalibrator_dict=gaincalibrator_dict, allow_gain_interpolation=True,use_wproject=use_wproject)
-        
-        if debug:
-            print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
-
-    ##
-    ## If we want to try amplitude selfcal, should we do it as a function out of the main loop or a separate loop?
-    ## Mechanics are likely to be a bit more simple since I expect we'd only try a single solint=inf solution
-    ##
-
-    ##
-    ## Make a final image per target to assess overall improvement
-    ##
-    for target in selfcal_library:
-     sani_target=sanitize_string(target)
-     for band in selfcal_library[target].keys():
-       nfsnr_modifier = selfcal_library[target][band]['RMS_NF_curr'] / selfcal_library[target][band]['RMS_curr']
-       clean_threshold = min(selfcal_library[target][band]['clean_threshold_orig'], selfcal_library[target][band]['RMS_NF_curr']*3.0)
-       if selfcal_library[target][band]['clean_threshold_orig'] < selfcal_library[target][band]['RMS_NF_curr']*3.0:
-           print("WARNING: The clean threshold used for the initial image was less than 3*RMS_NF_curr, using that for the final image threshold instead.")
-       tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_final',\
-                   band,nsigma=3.0, threshold=str(clean_threshold)+'Jy',scales=[0],\
-                   savemodel='none',parallel=parallel,
-                   field=target,datacolumn='corrected',\
-                   nfrms_multiplier=nfsnr_modifier,use_wproject=use_wproject)
-
-       final_SNR, final_RMS, final_NF_SNR, final_NF_RMS = get_image_stats(sani_target+'_'+band+'_final.image.tt0', sani_target+'_'+band+'_final.mask',
-               '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'final', 'final')
-
-       # Calculate final image stats.
-       mosaic_final_SNR, mosaic_final_RMS, mosaic_final_NF_SNR, mosaic_final_NF_RMS = {}, {}, {}, {}
-       for fid in selfcal_library[target][band]['sub-fields']:
-           if selfcal_library[target][band]['obstype'] == 'mosaic':
-               imagename = sani_target+'_field_'+str(fid)+'_'+band+'_final.image.tt0'
-           else:
-               imagename = sani_target+'_'+band+'_final.image.tt0'
-
-           mosaic_final_SNR[fid], mosaic_final_RMS[fid], mosaic_final_NF_SNR[fid],mosaic_final_NF_RMS[fid] = get_image_stats(imagename, 
-                   imagename.replace('image.tt0','mask'), '', selfcal_library[target][band][fid], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'final', 'final',
-                   mosaic_sub_field=selfcal_library[target][band]["obstype"]=="mosaic")
-
-       #recalc inital stats using final mask
-       orig_final_SNR, orig_final_RMS, orig_final_NF_SNR, orig_final_NF_RMS = get_image_stats(sani_target+'_'+band+'_initial.image.tt0', 
-               sani_target+'_'+band+'_final.mask', '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'orig', 'orig')
-
-       mosaic_final_SNR, mosaic_final_RMS, mosaic_final_NF_SNR, mosaic_final_NF_RMS = {}, {}, {}, {}
-       for fid in selfcal_library[target][band]['sub-fields']:
-           if selfcal_library[target][band]['obstype'] == 'mosaic':
-               imagename = sani_target+'_field_'+str(fid)+'_'+band
-           else:
-               imagename = sani_target+'_'+band
-
-           mosaic_final_SNR[fid], mosaic_final_RMS[fid], mosaic_final_NF_SNR[fid],mosaic_final_NF_RMS[fid] = get_image_stats(imagename+'_initial.image.tt0',
-                   imagename+'_final.mask', '', selfcal_library[target][band][fid], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'orig', 'orig',
-                   mosaic_sub_field=selfcal_library[target][band]["obstype"]=="mosaic")
-
-
-
-
-    if debug:
-        print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
-
-    ##
-    ## Make a final image per spw images to assess overall improvement
-    ##
-    if check_all_spws:
-       for target in selfcal_library:
-          sani_target=sanitize_string(target)
-          for band in selfcal_library[target].keys():
-             selfcal_library[target][band]['vislist']=selfcal_library[target][band]['vislist'].copy()
-
-             print('Generating final per-SPW images for '+target+' in '+band)
-             for spw in selfcal_library[target][band]['spw_map']:
-       ## omit DR modifiers here since we should have increased DR significantly
-                if not os.path.exists(sani_target+'_'+band+'_'+str(spw)+'_final.image.tt0'):
-                   nfsnr_modifier = selfcal_library[target][band]['RMS_NF_curr'] / selfcal_library[target][band]['RMS_curr']
-
-                   tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+str(spw)+'_final',\
-                              band,nsigma=4.0, threshold='theoretical',scales=[0],\
-                              savemodel='none',parallel=parallel,\
-                              field=target,datacolumn='corrected',\
-                              spw=spw,nfrms_multiplier=nfsnr_modifier,use_wproject=use_wproject)
-
-                final_per_spw_SNR, final_per_spw_RMS, final_per_spw_NF_SNR, final_per_spw_NF_RMS = get_image_stats(
-                        sani_target+'_'+band+'_'+str(spw)+'_final.image.tt0', sani_target+'_'+band+'_'+str(spw)+'_final.mask',
-                        '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'final', 'final', spw=spw)
-
-                #reccalc initial stats with final mask
-                orig_final_per_spw_SNR, orig_final_per_spw_RMS, orig_final_per_spw_NF_SNR, orig_final_per_spw_NF_RMS = get_image_stats(
-                        sani_target+'_'+band+'_'+str(spw)+'_initial.image.tt0', sani_target+'_'+band+'_'+str(spw)+'_final.mask',
-                        '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'orig', 'orig', spw=spw)
-
-    ##
-    ## Print final results
-    ##
-    for target in selfcal_library:
-     for band in selfcal_library[target].keys():
-       print(target+' '+band+' Summary')
-       print('At least 1 successful selfcal iteration?: ', selfcal_library[target][band]['SC_success'])
-       print('Final solint: ',selfcal_library[target][band]['final_solint'])
-       print('Original SNR: ',selfcal_library[target][band]['SNR_orig'])
-       print('Final SNR: ',selfcal_library[target][band]['SNR_final'])
-       print('Original RMS: ',selfcal_library[target][band]['RMS_orig'])
-       print('Final RMS: ',selfcal_library[target][band]['RMS_final'])
-       #   for vis in vislist:
-       #      print('Final gaintables: '+selfcal_library[target][band][vis]['gaintable'])
-       #      print('Final spwmap: ',selfcal_library[target][band][vis]['spwmap'])
-       #else:
-       #   print('Selfcal failed on '+target+'. No solutions applied.')
-
-       for fid in selfcal_library[target][band]['sub-fields']:
-           print(target+' '+band+' field '+str(fid)+' Summary')
-           print('At least 1 successful selfcal iteration?: ', selfcal_library[target][band][fid]['SC_success'])
-           print('Final solint: ',selfcal_library[target][band][fid]['final_solint'])
-           print('Original SNR: ',selfcal_library[target][band][fid]['SNR_orig'])
-           print('Final SNR: ',selfcal_library[target][band][fid]['SNR_final'])
-           print('Original RMS: ',selfcal_library[target][band][fid]['RMS_orig'])
-           print('Final RMS: ',selfcal_library[target][band][fid]['RMS_final'])
-
-    ##
-    ## Save final library results
-    ##
-
-    with open('selfcal_library.pickle', 'wb') as handle:
-        pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    with open('selfcal_plan.pickle', 'wb') as handle:
-        pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    # If the user asks to align the EBs, then align the original EBs using the alignment values found from the
-    # averaged EBs.
-
-    if align_EBs:
-        # Use the already calculated offsets to shift the original MS files into new, shifted MSes
-        suffix = '.shift'
-
-        for target in selfcal_library:
-            for band in selfcal_library[target]:
-                if selfcal_library[target][band]['obstype'] == 'mosaic' or len(selfcal_library[target][band]['vislist']) == 1:
-                    continue
-
-                align_measurement_sets(selfcal_library[target][band]['original_vislist_map'][selfcal_library[target][band]['vislist'][0]], 
-                        [selfcal_library[target][band]['original_vislist_map'][vis] for vis in selfcal_library[target][band]['vislist']], target, 
-                        align_offsets=[selfcal_library[target][band]['offsets'][vis] for vis in selfcal_library[target][band]['vislist']], npix=max(selfcal_library[target][band]['imsize']), 
-                        cell_size=float(selfcal_library[target][band]['cellsize'][0:-6]), plot_uv_grid=False, plot_file_template=None, 
-                        suffix='.shift')
-    else:
-        suffix = ''
-
-    # Either apply the calibrations to the original MS files, or write a file with the relevant
-    # commands to do so.
-
-    applycal_to_orig_MSes(selfcal_library, write_only=(not apply_to_target_ms), applytargets=applytargets, suffix=suffix)
-
-    # Do continuum subtraction of the original MS files.
-
-    uvcontsub_orig_MSes(selfcal_library, write_only=(not uvcontsub_target_ms), suffix=suffix)
-
-    #
-    # Perform a check on the per-spw images to ensure they didn't lose quality in self-calibration
-    #
-    if check_all_spws:
-       for target in selfcal_library:
-          sani_target=sanitize_string(target)
-          for band in selfcal_library[target].keys():
-             vislist=selfcal_library[target][band]['vislist'].copy()
-
-             for spw in selfcal_library[target][band]['spw_map']:
-                delta_beamarea=compare_beams(sani_target+'_'+band+'_'+str(spw)+'_initial.image.tt0',\
-                                             sani_target+'_'+band+'_'+str(spw)+'_final.image.tt0')
-                delta_SNR=selfcal_library[target][band]['per_spw_stats'][spw]['SNR_final']-\
-                          selfcal_library[target][band]['per_spw_stats'][spw]['SNR_orig']
-                delta_RMS=selfcal_library[target][band]['per_spw_stats'][spw]['RMS_final']-\
-                          selfcal_library[target][band]['per_spw_stats'][spw]['RMS_orig']
-                selfcal_library[target][band]['per_spw_stats'][spw]['delta_SNR']=delta_SNR
-                selfcal_library[target][band]['per_spw_stats'][spw]['delta_RMS']=delta_RMS
-                selfcal_library[target][band]['per_spw_stats'][spw]['delta_beamarea']=delta_beamarea
-                print(sani_target+'_'+band+'_'+str(spw),\
-                      'Pre SNR: {:0.2f}, Post SNR: {:0.2f} Pre RMS: {:0.3f}, Post RMS: {:0.3f}'.format(selfcal_library[target][band]['per_spw_stats'][spw]['SNR_orig'],\
-                       selfcal_library[target][band]['per_spw_stats'][spw]['SNR_final'],selfcal_library[target][band]['per_spw_stats'][spw]['RMS_orig']*1000.0,selfcal_library[target][band]['per_spw_stats'][spw]['RMS_final']*1000.0))
-                if delta_SNR < 0.0:
-                   print('WARNING SPW '+str(spw)+' HAS LOWER SNR POST SELFCAL')
-                if delta_RMS > 0.0:
-                   print('WARNING SPW '+str(spw)+' HAS HIGHER RMS POST SELFCAL')
-                if delta_beamarea > 0.05:
-                   print('WARNING SPW '+str(spw)+' HAS A >0.05 CHANGE IN BEAM AREA POST SELFCAL')
-
-
-    ##
-    ## Generate the weblog.
-    ##
-
-    if weblog:
-        generate_weblog(selfcal_library,selfcal_plan,directory='weblog')
-
-        # For simplicity, instead of redoing all of the weblog code, create a new selfcal_library dictionary where all of the sub-fields exist at the
-        # same level as the main field so that they all get their own entry in the weblog, in addition to the entry for the main field.
-        for target in selfcal_library:
-            new_selfcal_library = {}
-            new_selfcal_plan = {}
-            for band in selfcal_library[target].keys():
-                if selfcal_library[target][band]['obstype'] == 'mosaic':
+                with open('selfcal_library.pickle', 'wb') as handle:
+                    pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                with open('selfcal_plan.pickle', 'wb') as handle:
+                    pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            step = 4   
+
+            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
+                pickle.dump({
+                    'step': 4,
+
+                    'vislist': vislist if 'vislist' in locals() else None,
+                    'imsize': imsize if 'imsize' in locals() else None,
+                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
+                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
+                    'telescope': telescope if 'telescope' in locals() else None,
+                    'n_ants': n_ants if 'n_ants' in locals() else None,
+
+                    'all_targets': all_targets if 'all_targets' in locals() else None,
+                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
+                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
+                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
+                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
+                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
+                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
+                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
+
+                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
+                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
+                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
+                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
+                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
+                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
+                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
+                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
+                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
+                    'calibrators': calibrators if 'calibrators' in locals() else None,
+                    'suffix': suffix if 'suffix' in locals() else None
+                }, f)
+            continue
+
+        if step == 4:
+            
+            step_snapshot_file = f'checkpoint_files_step_{step}.pickle'
+            if os.path.exists(step_snapshot_file):
+                restore_step_files_snapshot(step, debug=debug)
+            save_step_files_snapshot(step)
+
+
+            print("Starting Step 4: Create Initial Images for Each Target") 
+            ##
+            ## create initial images for each target to evaluate SNR and beam
+            ## replicates what a preceding hif_makeimages would do
+            ## Enables before/after comparison and thresholds to be calculated
+            ## based on the achieved S/N in the real data
+            ##
+            for target in selfcal_library:
+                sani_target=sanitize_string(target)
+                for band in selfcal_library[target]:
+                    #make images using the appropriate tclean heuristics for each telescope
+                    # Because tclean doesn't deal in NF masks, the automask from the initial image is likely to contain a lot of noise unless
+                    # we can get an estimate of the NF modifier for the auto-masking thresholds. To do this, we need to create a very basic mask
+                    # with the dirty image. So we just use one iteration with a tiny gain so that nothing is really subtracted off.
+                    tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_dirty',
+                            band,nsigma=4.0, scales=[0],
+                            threshold='0.0Jy',niter=1, gain=0.00001,
+                            savemodel='none',parallel=parallel,
+                            field=target,use_wproject=use_wproject)
+
+                    dirty_SNR, dirty_RMS, dirty_NF_SNR, dirty_NF_RMS = get_image_stats(sani_target+'_'+band+'_dirty.image.tt0', sani_target+'_'+band+'_dirty.mask',
+                        '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] != 'ACA' or aca_use_nfmask), 'dirty', 'dirty')
+
+                    mosaic_dirty_SNR, mosaic_dirty_RMS, mosaic_dirty_NF_SNR, mosaic_dirty_NF_RMS = {}, {}, {}, {}
                     for fid in selfcal_library[target][band]['sub-fields']:
-                        if target+'_field_'+str(fid) not in new_selfcal_library:
-                            new_selfcal_library[target+'_field_'+str(fid)] = {}
-                            new_selfcal_plan[target+'_field_'+str(fid)] = {}
-                        new_selfcal_library[target+'_field_'+str(fid)][band] = selfcal_library[target][band][fid]
-                        new_selfcal_plan[target+'_field_'+str(fid)][band] = selfcal_plan[target][band]
+                        if selfcal_library[target][band]['obstype'] == 'mosaic':
+                            imagename = sani_target+'_field_'+str(fid)+'_'+band+'_dirty.image.tt0'
+                        else:
+                            imagename = sani_target+'_'+band+'_dirty.image.tt0'
 
-            if len(new_selfcal_library) > 0:
-                generate_weblog(new_selfcal_library,new_selfcal_plan,directory='weblog/'+target+'_field-by-field')
+                        mosaic_dirty_SNR[fid], mosaic_dirty_RMS[fid], mosaic_dirty_NF_SNR[fid], mosaic_dirty_NF_RMS[fid] = get_image_stats(imagename, 
+                            imagename.replace('image.tt0','mask'), '', selfcal_library[target][band][fid], (telescope != 'ACA' or aca_use_nfmask), 'dirty', 'dirty',
+                            mosaic_sub_field=selfcal_library[target][band]["obstype"]=="mosaic")
+
+                    tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_initial',
+                            band,nsigma=4.0, scales=[0],
+                            threshold='theoretical_with_drmod',
+                            savemodel='none',parallel=parallel,
+                            field=target,nfrms_multiplier=dirty_NF_RMS/dirty_RMS,store_threshold='orig', use_wproject=use_wproject)
+
+                    initial_SNR, initial_RMS, initial_NF_SNR, initial_NF_RMS = get_image_stats(sani_target+'_'+band+'_initial.image.tt0', 
+                        sani_target+'_'+band+'_initial.mask', '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] != 'ACA' or aca_use_nfmask), 'orig', 'orig')
+
+                    mosaic_initial_SNR, mosaic_initial_RMS, mosaic_initial_NF_SNR, mosaic_initial_NF_RMS = {}, {}, {}, {}
+                    for fid in selfcal_library[target][band]['sub-fields']:
+                        if selfcal_library[target][band]['obstype'] == 'mosaic':
+                            imagename = sani_target+'_field_'+str(fid)+'_'+band+'_initial.image.tt0'
+                        else:
+                            imagename = sani_target+'_'+band+'_initial.image.tt0'
+
+                        mosaic_initial_SNR[fid], mosaic_initial_RMS[fid], mosaic_initial_NF_SNR[fid],mosaic_initial_NF_RMS[fid] = get_image_stats(imagename, 
+                            imagename.replace('image.tt0','mask'), '', selfcal_library[target][band][fid], (selfcal_library[target][band]['telescope'] != 'ACA' or aca_use_nfmask), 'orig', 'orig',
+                            mosaic_sub_field=selfcal_library[target][band]["obstype"]=="mosaic")
+
+                    if ("VLA" in selfcal_library[target][band]['telescope'] or selfcal_library[target][band]['telescope'] == 'VLBA') and "clean_threshold_orig" not in selfcal_library[target][band]:
+                        selfcal_library[target][band]['clean_threshold_orig']=4.0*initial_RMS
+
+                    if selfcal_library[target][band]['nterms'] == 1:  # updated nterms if needed based on S/N and fracbw
+                        selfcal_library[target][band]['nterms']=check_image_nterms(selfcal_library[target][band]['fracbw'],selfcal_library[target][band]['SNR_orig'])
+
+                    selfcal_library[target][band]['RMS_curr']=initial_RMS
+                    selfcal_library[target][band]['RMS_NF_curr']=initial_NF_RMS if initial_NF_RMS > 0 else initial_RMS
+
+                    for fid in selfcal_library[target][band]['sub-fields']:
+                        if selfcal_library[target][band][fid]['SNR_orig'] > 500.0:
+                            selfcal_library[target][band][fid]['nterms']=2
+
+                        selfcal_library[target][band][fid]['RMS_curr']=mosaic_initial_RMS[fid]
+                        selfcal_library[target][band][fid]['RMS_NF_curr']=mosaic_initial_NF_RMS[fid] if mosaic_initial_NF_RMS[fid] > 0 else mosaic_initial_RMS[fid]
+
+                #update selfcal library after each
+                with open('selfcal_library.pickle', 'wb') as handle:
+                    pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            if debug:
+                print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
+
+            step = 5
+            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
+                pickle.dump({
+                    'step': 5,
+
+                    'vislist': vislist if 'vislist' in locals() else None,
+                    'imsize': imsize if 'imsize' in locals() else None,
+                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
+                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
+                    'telescope': telescope if 'telescope' in locals() else None,
+                    'n_ants': n_ants if 'n_ants' in locals() else None,
+
+                    'all_targets': all_targets if 'all_targets' in locals() else None,
+                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
+                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
+                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
+                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
+                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
+                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
+                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
+
+                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
+                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
+                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
+                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
+                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
+                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
+                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
+                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
+                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
+                    'calibrators': calibrators if 'calibrators' in locals() else None,
+                    'suffix': suffix if 'suffix' in locals() else None
+                }, f)
+            continue
 
 
-"""
-   
+        if step == 5:
+            
+            step_snapshot_file = f'checkpoint_files_step_{step}.pickle'
+            if os.path.exists(step_snapshot_file):
+                restore_step_files_snapshot(step, debug=debug)
+            save_step_files_snapshot(step)
+
+
+            ####MAKE DIRTY PER SPW IMAGES TO PROPERLY ASSESS DR MODIFIERS
+            ##
+            ## Make a initial image per spw images to assess overall improvement
+            ##   
+
+            dirty_per_spw_NF_SNR, dirty_per_spw_NF_RMS = None, None
+            per_spw_SNR, per_spw_RMS = None, None
+            initial_per_spw_NF_SNR, initial_per_spw_NF_RMS = None, None
+
+            if check_all_spws:
+                for target in selfcal_library:
+                    sani_target=sanitize_string(target)
+                    for band in selfcal_library[target].keys():
+                        #potential place where diff spws for different VLA EBs could cause problems
+                        for spw in selfcal_library[target][band]['spw_map']:
+                            keylist=selfcal_library[target][band]['per_spw_stats'].keys()
+                            if spw not in keylist:
+                                selfcal_library[target][band]['per_spw_stats'][spw]={}
+                            tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+str(spw)+'_dirty',
+                                  band,nsigma=4.0, scales=[0],
+                                  threshold='0.0Jy',niter=1,gain=0.00001,
+                                  savemodel='none',parallel=parallel,
+                                  field=target,spw=spw,use_wproject=use_wproject)
+
+                            dirty_SNR, dirty_RMS, dirty_per_spw_NF_SNR, dirty_per_spw_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+str(spw)+
+                                    '_dirty.image.tt0', sani_target+'_'+band+'_'+str(spw)+'_dirty.mask','', selfcal_library[target][band], 
+                                    (selfcal_library[target][band]['telescope'] != 'ACA' or aca_use_nfmask), 'dirty', 'dirty', spw=spw)
+
+                            tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+str(spw)+'_initial',\
+                                       band,nsigma=4.0, threshold='theoretical_with_drmod',scales=[0],\
+                                       savemodel='none',parallel=parallel,\
+                                       field=target,datacolumn='corrected',\
+                                       spw=spw,nfrms_multiplier=dirty_per_spw_NF_RMS/dirty_RMS,use_wproject=use_wproject)
+
+                            per_spw_SNR, per_spw_RMS, initial_per_spw_NF_SNR, initial_per_spw_NF_RMS = get_image_stats(sani_target+'_'+band+'_'+str(spw)+
+                                    '_initial.image.tt0', sani_target+'_'+band+'_'+str(spw)+'_initial.mask', '', selfcal_library[target][band], 
+                                    (selfcal_library[target][band]['telescope'] != 'ACA' or aca_use_nfmask), 'orig', 'orig', spw=spw)
+
+                with open('selfcal_library.pickle', 'wb') as handle:
+                    pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                with open('selfcal_plan.pickle', 'wb') as handle:
+                    pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            step = 6
+            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
+                pickle.dump({
+                    'step': 6,
+
+                    'vislist': vislist if 'vislist' in locals() else None,
+                    'imsize': imsize if 'imsize' in locals() else None,
+                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
+                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
+                    'telescope': telescope if 'telescope' in locals() else None,
+                    'n_ants': n_ants if 'n_ants' in locals() else None,
+
+                    'all_targets': all_targets if 'all_targets' in locals() else None,
+                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
+                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
+                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
+                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
+                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
+                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
+                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
+
+                    # Step 3 variables
+                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
+                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
+                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
+                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
+                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
+                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
+                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
+                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
+
+                    # Step 5 variables
+                    'dirty_per_spw_NF_SNR': dirty_per_spw_NF_SNR,
+                    'dirty_per_spw_NF_RMS': dirty_per_spw_NF_RMS,
+                    'per_spw_SNR': per_spw_SNR,
+                    'per_spw_RMS': per_spw_RMS,
+                    'initial_per_spw_NF_SNR': initial_per_spw_NF_SNR,
+                    'initial_per_spw_NF_RMS': initial_per_spw_NF_RMS,
+
+                    # Later-step placeholders
+                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
+                    'calibrators': calibrators if 'calibrators' in locals() else None,
+                    'suffix': suffix if 'suffix' in locals() else None
+                }, f)
+            continue
+
+        if step == 6:
+            step_snapshot_file = f'checkpoint_files_step_{step}.pickle'
+            if os.path.exists(step_snapshot_file):
+                restore_step_files_snapshot(step, debug=debug)
+            save_step_files_snapshot(step)
+            ##
+            ## estimate per scan/EB S/N using time on source and median scan times
+            ##
+
+            get_SNR_self(selfcal_library,selfcal_plan,n_ants,inf_EB_gaincal_combine,inf_EB_gaintype)
+
+            ##
+            ## Set clean selfcal thresholds
+            ### Open question about determining the starting and progression of clean threshold for
+            ### each iteration
+            ### Peak S/N > 100; SNR/15 for first, successivly reduce to 3.0 sigma through each iteration?
+            ### Peak S/N < 100; SNR/10.0 
+            ##
+            ## Switch to a sensitivity for low frequency that is based on the residuals of the initial image for the
+            # first couple rounds and then switch to straight nsigma? Determine based on fraction of pixels that the # initial mask covers to judge very extended sources?
+
+            example_target = list(selfcal_library.keys())[0]
+            example_band = list(selfcal_library[example_target].keys())[0]
+
+            set_clean_thresholds(selfcal_library, selfcal_plan, dividing_factor=dividing_factor, rel_thresh_scaling=rel_thresh_scaling, telescope=selfcal_library[example_target][example_band]['telescope'])
+
+            plan_selfcal_per_solint(selfcal_library, selfcal_plan,optimize_spw_combine=optimize_spw_combine)
+            ##
+            ## Save self-cal library
+            ##
+
+            with open('selfcal_library.pickle', 'wb') as handle:
+                pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            with open('selfcal_plan.pickle', 'wb') as handle:
+                pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            step = 7
+            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
+                pickle.dump({
+                    'step': 7,
+
+                    'vislist': vislist if 'vislist' in locals() else None,
+                    'imsize': imsize if 'imsize' in locals() else None,
+                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
+                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
+                    'telescope': telescope if 'telescope' in locals() else None,
+                    'n_ants': n_ants if 'n_ants' in locals() else None,
+
+                    'all_targets': all_targets if 'all_targets' in locals() else None,
+                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
+                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
+                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
+                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
+                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
+                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
+                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
+
+                    # Step 3 variables
+                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
+                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
+                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
+                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
+                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
+                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
+                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
+                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
+
+                    # Step 5 variables
+                    'dirty_per_spw_NF_SNR': dirty_per_spw_NF_SNR if 'dirty_per_spw_NF_SNR' in locals() else None,
+                    'dirty_per_spw_NF_RMS': dirty_per_spw_NF_RMS if 'dirty_per_spw_NF_RMS' in locals() else None,
+                    'per_spw_SNR': per_spw_SNR if 'per_spw_SNR' in locals() else None,
+                    'per_spw_RMS': per_spw_RMS if 'per_spw_RMS' in locals() else None,
+                    'initial_per_spw_NF_SNR': initial_per_spw_NF_SNR if 'initial_per_spw_NF_SNR' in locals() else None,
+                    'initial_per_spw_NF_RMS': initial_per_spw_NF_RMS if 'initial_per_spw_NF_RMS' in locals() else None,
+
+                    # Later-step placeholders
+                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
+                    'calibrators': calibrators if 'calibrators' in locals() else None,
+                    'suffix': suffix if 'suffix' in locals() else None
+                }, f)
+            continue
+
+        if step == 7:
+            step_snapshot_file = f'checkpoint_files_step_{step}.pickle'
+            if os.path.exists(step_snapshot_file):
+                restore_step_files_snapshot(step, debug=debug)
+            save_step_files_snapshot(step)
+            ##
+            ## Begin Self-cal loops
+            ##
+            for target in selfcal_library:
+                for band in selfcal_library[target].keys():
+                    run_selfcal(selfcal_library[target][band], selfcal_plan[target][band], target, band, n_ants, \
+                           gaincal_minsnr=gaincal_minsnr, gaincal_unflag_minsnr=gaincal_unflag_minsnr, minsnr_to_proceed=minsnr_to_proceed, delta_beam_thresh=delta_beam_thresh, do_amp_selfcal=do_amp_selfcal, \
+                           inf_EB_gaincal_combine=inf_EB_gaincal_combine, inf_EB_gaintype=inf_EB_gaintype, unflag_only_lbants=unflag_only_lbants, \
+                           unflag_only_lbants_onlyap=unflag_only_lbants_onlyap, calonly_max_flagged=calonly_max_flagged, \
+                           second_iter_solmode=second_iter_solmode, unflag_fb_to_prev_solint=unflag_fb_to_prev_solint, rerank_refants=rerank_refants, \
+                           gaincalibrator_dict=gaincalibrator_dict, allow_gain_interpolation=allow_gain_interpolation, guess_scan_combine=guess_scan_combine, \
+                           aca_use_nfmask=aca_use_nfmask,debug=debug,spectral_solution_fraction=spectral_solution_fraction,use_wproject=use_wproject)
+
+            with open('selfcal_library.pickle', 'wb') as handle:
+                pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            with open('selfcal_plan.pickle', 'wb') as handle:
+                pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            if debug:
+                print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
+
+            step = 8
+            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
+                pickle.dump({
+                    'step': 8,
+
+                    'vislist': vislist if 'vislist' in locals() else None,
+                    'imsize': imsize if 'imsize' in locals() else None,
+                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
+                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
+                    'telescope': telescope if 'telescope' in locals() else None,
+                    'n_ants': n_ants if 'n_ants' in locals() else None,
+
+                    'all_targets': all_targets if 'all_targets' in locals() else None,
+                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
+                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
+                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
+                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
+                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
+                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
+                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
+
+                    # Step 3 variables
+                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
+                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
+                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
+                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
+                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
+                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
+                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
+                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
+
+                    # Step 5 variables
+                    'dirty_per_spw_NF_SNR': dirty_per_spw_NF_SNR if 'dirty_per_spw_NF_SNR' in locals() else None,
+                    'dirty_per_spw_NF_RMS': dirty_per_spw_NF_RMS if 'dirty_per_spw_NF_RMS' in locals() else None,
+                    'per_spw_SNR': per_spw_SNR if 'per_spw_SNR' in locals() else None,
+                    'per_spw_RMS': per_spw_RMS if 'per_spw_RMS' in locals() else None,
+                    'initial_per_spw_NF_SNR': initial_per_spw_NF_SNR if 'initial_per_spw_NF_SNR' in locals() else None,
+                    'initial_per_spw_NF_RMS': initial_per_spw_NF_RMS if 'initial_per_spw_NF_RMS' in locals() else None,
+
+                    # Later-step placeholders
+                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
+                    'calibrators': calibrators if 'calibrators' in locals() else None,
+                    'suffix': suffix if 'suffix' in locals() else None
+                }, f)
+            continue
+
+        if step == 8:
+            step_snapshot_file = f'checkpoint_files_step_{step}.pickle'
+            if os.path.exists(step_snapshot_file):
+                restore_step_files_snapshot(step, debug=debug)
+            save_step_files_snapshot(step)
+
+            fallback_fields = fallback_fields if 'fallback_fields' in locals() else None
+            calibrators = calibrators if 'calibrators' in locals() else None
+
+            if allow_cocal:
+                fallback_fields, calibrators = prepare_cocal(selfcal_library, selfcal_plan, inf_EB_gaincal_combine, inf_EB_gaintype)
+                ##
+                ## Begin fallback self-cal loops
+                ##
+                for target in selfcal_library:
+                    for band in selfcal_library[target].keys():
+                        if target not in fallback_fields[band]:
+                            continue
+                    
+                        run_selfcal(selfcal_library[target][band], selfcal_plan[target][band], target, band, n_ants, \
+                               gaincal_minsnr=gaincal_minsnr, gaincal_unflag_minsnr=gaincal_unflag_minsnr, minsnr_to_proceed=minsnr_to_proceed, delta_beam_thresh=delta_beam_thresh, do_amp_selfcal=do_amp_selfcal, \
+                               inf_EB_gaincal_combine=inf_EB_gaincal_combine, inf_EB_gaintype=inf_EB_gaintype, unflag_only_lbants=unflag_only_lbants, \
+                               unflag_only_lbants_onlyap=unflag_only_lbants_onlyap, calonly_max_flagged=calonly_max_flagged, \
+                               second_iter_solmode=second_iter_solmode, unflag_fb_to_prev_solint=unflag_fb_to_prev_solint, rerank_refants=rerank_refants, \
+                               mode="cocal", calibrators=calibrators, gaincalibrator_dict=gaincalibrator_dict, allow_gain_interpolation=True,use_wproject=use_wproject)
+
+                with open('selfcal_library.pickle', 'wb') as handle:
+                    pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+                with open('selfcal_plan.pickle', 'wb') as handle:
+                    pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+                if debug:
+                    print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
+
+            ##
+            ## If we want to try amplitude selfcal, should we do it as a function out of the main loop or a separate loop?
+            ## Mechanics are likely to be a bit more simple since I expect we'd only try a single solint=inf solution
+            ##
+
+            step = 9
+            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
+                pickle.dump({
+                    'step': 9,
+
+                    'vislist': vislist if 'vislist' in locals() else None,
+                    'imsize': imsize if 'imsize' in locals() else None,
+                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
+                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
+                    'telescope': telescope if 'telescope' in locals() else None,
+                    'n_ants': n_ants if 'n_ants' in locals() else None,
+
+                    'all_targets': all_targets if 'all_targets' in locals() else None,
+                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
+                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
+                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
+                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
+                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
+                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
+                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
+
+                    # Step 3 variables
+                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
+                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
+                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
+                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
+                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
+                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
+                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
+                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
+
+                    # Step 5 variables
+                    'dirty_per_spw_NF_SNR': dirty_per_spw_NF_SNR if 'dirty_per_spw_NF_SNR' in locals() else None,
+                    'dirty_per_spw_NF_RMS': dirty_per_spw_NF_RMS if 'dirty_per_spw_NF_RMS' in locals() else None,
+                    'per_spw_SNR': per_spw_SNR if 'per_spw_SNR' in locals() else None,
+                    'per_spw_RMS': per_spw_RMS if 'per_spw_RMS' in locals() else None,
+                    'initial_per_spw_NF_SNR': initial_per_spw_NF_SNR if 'initial_per_spw_NF_SNR' in locals() else None,
+                    'initial_per_spw_NF_RMS': initial_per_spw_NF_RMS if 'initial_per_spw_NF_RMS' in locals() else None,
+
+                    # Step 8 variables
+                    'fallback_fields': fallback_fields,
+                    'calibrators': calibrators,
+
+                    # Later-step placeholders
+                    'suffix': suffix if 'suffix' in locals() else None
+                }, f)
+            continue
+
+        if step == 9:
+
+            step_snapshot_file = f'checkpoint_files_step_{step}.pickle'
+            if os.path.exists(step_snapshot_file):
+                restore_step_files_snapshot(step, debug=debug)
+            save_step_files_snapshot(step)
+
+            ##
+            ## Make a final image per target to assess overall improvement
+            ##
+            final_SNR, final_RMS, final_NF_SNR, final_NF_RMS = None, None, None, None
+            orig_final_SNR, orig_final_RMS, orig_final_NF_SNR, orig_final_NF_RMS = None, None, None, None
+            mosaic_final_SNR, mosaic_final_RMS, mosaic_final_NF_SNR, mosaic_final_NF_RMS = None, None, None, None
+            nfsnr_modifier, clean_threshold = None, None
+
+            for target in selfcal_library:
+                sani_target=sanitize_string(target)
+                for band in selfcal_library[target].keys():
+                    nfsnr_modifier = selfcal_library[target][band]['RMS_NF_curr'] / selfcal_library[target][band]['RMS_curr']
+                    clean_threshold = min(selfcal_library[target][band]['clean_threshold_orig'], selfcal_library[target][band]['RMS_NF_curr']*3.0)
+                    if selfcal_library[target][band]['clean_threshold_orig'] < selfcal_library[target][band]['RMS_NF_curr']*3.0:
+                        print("WARNING: The clean threshold used for the initial image was less than 3*RMS_NF_curr, using that for the final image threshold instead.")
+                    tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_final',\
+                               band,nsigma=3.0, threshold=str(clean_threshold)+'Jy',scales=[0],\
+                               savemodel='none',parallel=parallel,
+                               field=target,datacolumn='corrected',\
+                               nfrms_multiplier=nfsnr_modifier,use_wproject=use_wproject)
+
+                    final_SNR, final_RMS, final_NF_SNR, final_NF_RMS = get_image_stats(sani_target+'_'+band+'_final.image.tt0', sani_target+'_'+band+'_final.mask',
+                           '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'final', 'final')
+
+                    # Calculate final image stats.
+                    mosaic_final_SNR, mosaic_final_RMS, mosaic_final_NF_SNR, mosaic_final_NF_RMS = {}, {}, {}, {}
+                    for fid in selfcal_library[target][band]['sub-fields']:
+                        if selfcal_library[target][band]['obstype'] == 'mosaic':
+                            imagename = sani_target+'_field_'+str(fid)+'_'+band+'_final.image.tt0'
+                        else:
+                            imagename = sani_target+'_'+band+'_final.image.tt0'
+
+                        mosaic_final_SNR[fid], mosaic_final_RMS[fid], mosaic_final_NF_SNR[fid],mosaic_final_NF_RMS[fid] = get_image_stats(imagename, 
+                               imagename.replace('image.tt0','mask'), '', selfcal_library[target][band][fid], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'final', 'final',
+                               mosaic_sub_field=selfcal_library[target][band]["obstype"]=="mosaic")
+
+                    #recalc inital stats using final mask
+                    orig_final_SNR, orig_final_RMS, orig_final_NF_SNR, orig_final_NF_RMS = get_image_stats(sani_target+'_'+band+'_initial.image.tt0', 
+                           sani_target+'_'+band+'_final.mask', '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'orig', 'orig')
+
+                    mosaic_final_SNR, mosaic_final_RMS, mosaic_final_NF_SNR, mosaic_final_NF_RMS = {}, {}, {}, {}
+                    for fid in selfcal_library[target][band]['sub-fields']:
+                        if selfcal_library[target][band]['obstype'] == 'mosaic':
+                            imagename = sani_target+'_field_'+str(fid)+'_'+band
+                        else:
+                            imagename = sani_target+'_'+band
+
+                        mosaic_final_SNR[fid], mosaic_final_RMS[fid], mosaic_final_NF_SNR[fid],mosaic_final_NF_RMS[fid] = get_image_stats(imagename+'_initial.image.tt0',
+                               imagename+'_final.mask', '', selfcal_library[target][band][fid], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'orig', 'orig',
+                               mosaic_sub_field=selfcal_library[target][band]["obstype"]=="mosaic")
+
+            with open('selfcal_library.pickle', 'wb') as handle:
+                pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            with open('selfcal_plan.pickle', 'wb') as handle:
+                pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            if debug:
+                print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
+
+            step = 10
+            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
+                pickle.dump({
+                    'step': 10,
+
+                    'vislist': vislist if 'vislist' in locals() else None,
+                    'imsize': imsize if 'imsize' in locals() else None,
+                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
+                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
+                    'telescope': telescope if 'telescope' in locals() else None,
+                    'n_ants': n_ants if 'n_ants' in locals() else None,
+
+                    'all_targets': all_targets if 'all_targets' in locals() else None,
+                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
+                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
+                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
+                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
+                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
+                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
+                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
+
+                    # Step 3 variables
+                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
+                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
+                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
+                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
+                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
+                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
+                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
+                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
+
+                    # Step 5 variables
+                    'dirty_per_spw_NF_SNR': dirty_per_spw_NF_SNR if 'dirty_per_spw_NF_SNR' in locals() else None,
+                    'dirty_per_spw_NF_RMS': dirty_per_spw_NF_RMS if 'dirty_per_spw_NF_RMS' in locals() else None,
+                    'per_spw_SNR': per_spw_SNR if 'per_spw_SNR' in locals() else None,
+                    'per_spw_RMS': per_spw_RMS if 'per_spw_RMS' in locals() else None,
+                    'initial_per_spw_NF_SNR': initial_per_spw_NF_SNR if 'initial_per_spw_NF_SNR' in locals() else None,
+                    'initial_per_spw_NF_RMS': initial_per_spw_NF_RMS if 'initial_per_spw_NF_RMS' in locals() else None,
+
+                    # Step 8 variables
+                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
+                    'calibrators': calibrators if 'calibrators' in locals() else None,
+
+                    # Step 9 variables
+                    'final_SNR': final_SNR,
+                    'final_RMS': final_RMS,
+                    'final_NF_SNR': final_NF_SNR,
+                    'final_NF_RMS': final_NF_RMS,
+                    'orig_final_SNR': orig_final_SNR,
+                    'orig_final_RMS': orig_final_RMS,
+                    'orig_final_NF_SNR': orig_final_NF_SNR,
+                    'orig_final_NF_RMS': orig_final_NF_RMS,
+                    'mosaic_final_SNR': mosaic_final_SNR,
+                    'mosaic_final_RMS': mosaic_final_RMS,
+                    'mosaic_final_NF_SNR': mosaic_final_NF_SNR,
+                    'mosaic_final_NF_RMS': mosaic_final_NF_RMS,
+                    'nfsnr_modifier': nfsnr_modifier,
+                    'clean_threshold': clean_threshold,
+
+                    # Later-step placeholders
+                    'suffix': suffix if 'suffix' in locals() else None
+                }, f)
+            continue
+
+        if step == 10:
+
+            step_snapshot_file = f'checkpoint_files_step_{step}.pickle'
+            if os.path.exists(step_snapshot_file):
+                restore_step_files_snapshot(step, debug=debug)
+            save_step_files_snapshot(step)
+            ##
+            ## Make a final image per spw images to assess overall improvement
+            ##
+            final_per_spw_SNR, final_per_spw_RMS, final_per_spw_NF_SNR, final_per_spw_NF_RMS = None, None, None, None
+            orig_final_per_spw_SNR, orig_final_per_spw_RMS, orig_final_per_spw_NF_SNR, orig_final_per_spw_NF_RMS = None, None, None, None
+
+            if check_all_spws:
+                for target in selfcal_library:
+                    sani_target=sanitize_string(target)
+                    for band in selfcal_library[target].keys():
+                        selfcal_library[target][band]['vislist']=selfcal_library[target][band]['vislist'].copy()
+
+                        print('Generating final per-SPW images for '+target+' in '+band)
+                        for spw in selfcal_library[target][band]['spw_map']:
+                            ## omit DR modifiers here since we should have increased DR significantly
+                            if not os.path.exists(sani_target+'_'+band+'_'+str(spw)+'_final.image.tt0'):
+                                nfsnr_modifier = selfcal_library[target][band]['RMS_NF_curr'] / selfcal_library[target][band]['RMS_curr']
+
+                                tclean_wrapper(selfcal_library[target][band],sani_target+'_'+band+'_'+str(spw)+'_final',\
+                                          band,nsigma=4.0, threshold='theoretical',scales=[0],\
+                                          savemodel='none',parallel=parallel,\
+                                          field=target,datacolumn='corrected',\
+                                          spw=spw,nfrms_multiplier=nfsnr_modifier,use_wproject=use_wproject)
+
+                            final_per_spw_SNR, final_per_spw_RMS, final_per_spw_NF_SNR, final_per_spw_NF_RMS = get_image_stats(
+                                    sani_target+'_'+band+'_'+str(spw)+'_final.image.tt0', sani_target+'_'+band+'_'+str(spw)+'_final.mask',
+                                    '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'final', 'final', spw=spw)
+
+                            #reccalc initial stats with final mask
+                            orig_final_per_spw_SNR, orig_final_per_spw_RMS, orig_final_per_spw_NF_SNR, orig_final_per_spw_NF_RMS = get_image_stats(
+                                    sani_target+'_'+band+'_'+str(spw)+'_initial.image.tt0', sani_target+'_'+band+'_'+str(spw)+'_final.mask',
+                                    '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'orig', 'orig', spw=spw)
+
+                with open('selfcal_library.pickle', 'wb') as handle:
+                    pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+                with open('selfcal_plan.pickle', 'wb') as handle:
+                    pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            step = 11
+            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
+                pickle.dump({
+                    'step': 11,
+
+                    'vislist': vislist if 'vislist' in locals() else None,
+                    'imsize': imsize if 'imsize' in locals() else None,
+                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
+                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
+                    'telescope': telescope if 'telescope' in locals() else None,
+                    'n_ants': n_ants if 'n_ants' in locals() else None,
+
+                    'all_targets': all_targets if 'all_targets' in locals() else None,
+                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
+                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
+                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
+                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
+                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
+                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
+                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
+
+                    # Step 3 variables
+                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
+                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
+                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
+                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
+                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
+                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
+                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
+                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
+
+                    # Step 5 variables
+                    'dirty_per_spw_NF_SNR': dirty_per_spw_NF_SNR if 'dirty_per_spw_NF_SNR' in locals() else None,
+                    'dirty_per_spw_NF_RMS': dirty_per_spw_NF_RMS if 'dirty_per_spw_NF_RMS' in locals() else None,
+                    'per_spw_SNR': per_spw_SNR if 'per_spw_SNR' in locals() else None,
+                    'per_spw_RMS': per_spw_RMS if 'per_spw_RMS' in locals() else None,
+                    'initial_per_spw_NF_SNR': initial_per_spw_NF_SNR if 'initial_per_spw_NF_SNR' in locals() else None,
+                    'initial_per_spw_NF_RMS': initial_per_spw_NF_RMS if 'initial_per_spw_NF_RMS' in locals() else None,
+
+                    # Step 8 variables
+                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
+                    'calibrators': calibrators if 'calibrators' in locals() else None,
+
+                    # Step 9 variables
+                    'final_SNR': final_SNR if 'final_SNR' in locals() else None,
+                    'final_RMS': final_RMS if 'final_RMS' in locals() else None,
+                    'final_NF_SNR': final_NF_SNR if 'final_NF_SNR' in locals() else None,
+                    'final_NF_RMS': final_NF_RMS if 'final_NF_RMS' in locals() else None,
+                    'orig_final_SNR': orig_final_SNR if 'orig_final_SNR' in locals() else None,
+                    'orig_final_RMS': orig_final_RMS if 'orig_final_RMS' in locals() else None,
+                    'orig_final_NF_SNR': orig_final_NF_SNR if 'orig_final_NF_SNR' in locals() else None,
+                    'orig_final_NF_RMS': orig_final_NF_RMS if 'orig_final_NF_RMS' in locals() else None,
+                    'mosaic_final_SNR': mosaic_final_SNR if 'mosaic_final_SNR' in locals() else None,
+                    'mosaic_final_RMS': mosaic_final_RMS if 'mosaic_final_RMS' in locals() else None,
+                    'mosaic_final_NF_SNR': mosaic_final_NF_SNR if 'mosaic_final_NF_SNR' in locals() else None,
+                    'mosaic_final_NF_RMS': mosaic_final_NF_RMS if 'mosaic_final_NF_RMS' in locals() else None,
+                    'nfsnr_modifier': nfsnr_modifier if 'nfsnr_modifier' in locals() else None,
+                    'clean_threshold': clean_threshold if 'clean_threshold' in locals() else None,
+
+                    # Step 10 variables
+                    'final_per_spw_SNR': final_per_spw_SNR,
+                    'final_per_spw_RMS': final_per_spw_RMS,
+                    'final_per_spw_NF_SNR': final_per_spw_NF_SNR,
+                    'final_per_spw_NF_RMS': final_per_spw_NF_RMS,
+                    'orig_final_per_spw_SNR': orig_final_per_spw_SNR,
+                    'orig_final_per_spw_RMS': orig_final_per_spw_RMS,
+                    'orig_final_per_spw_NF_SNR': orig_final_per_spw_NF_SNR,
+                    'orig_final_per_spw_NF_RMS': orig_final_per_spw_NF_RMS,
+
+                    # Later-step placeholders
+                    'suffix': suffix if 'suffix' in locals() else None
+                }, f)
+            continue
+
+        if step == 11:
+
+            step_snapshot_file = f'checkpoint_files_step_{step}.pickle'
+            if os.path.exists(step_snapshot_file):
+                restore_step_files_snapshot(step, debug=debug)
+            save_step_files_snapshot(step)
+            ##
+            ## Print final results
+            ##
+            suffix = suffix if 'suffix' in locals() else ''
+
+            for target in selfcal_library:
+                for band in selfcal_library[target].keys():
+                    print(target+' '+band+' Summary')
+                    print('At least 1 successful selfcal iteration?: ', selfcal_library[target][band]['SC_success'])
+                    print('Final solint: ',selfcal_library[target][band]['final_solint'])
+                    print('Original SNR: ',selfcal_library[target][band]['SNR_orig'])
+                    print('Final SNR: ',selfcal_library[target][band]['SNR_final'])
+                    print('Original RMS: ',selfcal_library[target][band]['RMS_orig'])
+                    print('Final RMS: ',selfcal_library[target][band]['RMS_final'])
+                    #   for vis in vislist:
+                    #      print('Final gaintables: '+selfcal_library[target][band][vis]['gaintable'])
+                    #      print('Final spwmap: ',selfcal_library[target][band][vis]['spwmap'])
+                    #else:
+                    #   print('Selfcal failed on '+target+'. No solutions applied.')
+
+                    for fid in selfcal_library[target][band]['sub-fields']:
+                        print(target+' '+band+' field '+str(fid)+' Summary')
+                        print('At least 1 successful selfcal iteration?: ', selfcal_library[target][band][fid]['SC_success'])
+                        print('Final solint: ',selfcal_library[target][band][fid]['final_solint'])
+                        print('Original SNR: ',selfcal_library[target][band][fid]['SNR_orig'])
+                        print('Final SNR: ',selfcal_library[target][band][fid]['SNR_final'])
+                        print('Original RMS: ',selfcal_library[target][band][fid]['RMS_orig'])
+                        print('Final RMS: ',selfcal_library[target][band][fid]['RMS_final'])
+
+            ##
+            ## Save final library results
+            ##
+
+            with open('selfcal_library.pickle', 'wb') as handle:
+                pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            with open('selfcal_plan.pickle', 'wb') as handle:
+                pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            # If the user asks to align the EBs, then align the original EBs using the alignment values found from the
+            # averaged EBs.
+
+            if align_EBs:
+                # Use the already calculated offsets to shift the original MS files into new, shifted MSes
+                suffix = '.shift'
+
+                for target in selfcal_library:
+                    for band in selfcal_library[target]:
+                        if selfcal_library[target][band]['obstype'] == 'mosaic' or len(selfcal_library[target][band]['vislist']) == 1:
+                            continue
+
+                        align_measurement_sets(selfcal_library[target][band]['original_vislist_map'][selfcal_library[target][band]['vislist'][0]], 
+                                [selfcal_library[target][band]['original_vislist_map'][vis] for vis in selfcal_library[target][band]['vislist']], target, 
+                                align_offsets=[selfcal_library[target][band]['offsets'][vis] for vis in selfcal_library[target][band]['vislist']], npix=max(selfcal_library[target][band]['imsize']), 
+                                cell_size=float(selfcal_library[target][band]['cellsize'][0:-6]), plot_uv_grid=False, plot_file_template=None, 
+                                suffix='.shift')
+            else:
+                suffix = ''
+
+            # Either apply the calibrations to the original MS files, or write a file with the relevant
+            # commands to do so.
+
+            applycal_to_orig_MSes(selfcal_library, write_only=(not apply_to_target_ms), applytargets=applytargets, suffix=suffix)
+
+            # Do continuum subtraction of the original MS files.
+
+            uvcontsub_orig_MSes(selfcal_library, write_only=(not uvcontsub_target_ms), suffix=suffix)
+
+            #
+            # Perform a check on the per-spw images to ensure they didn't lose quality in self-calibration
+            #
+            delta_beamarea, delta_SNR, delta_RMS = None, None, None
+
+            if check_all_spws:
+                for target in selfcal_library:
+                    sani_target=sanitize_string(target)
+                    for band in selfcal_library[target].keys():
+                        vislist=selfcal_library[target][band]['vislist'].copy()
+
+                        for spw in selfcal_library[target][band]['spw_map']:
+                            delta_beamarea=compare_beams(sani_target+'_'+band+'_'+str(spw)+'_initial.image.tt0',\
+                                                         sani_target+'_'+band+'_'+str(spw)+'_final.image.tt0')
+                            delta_SNR=selfcal_library[target][band]['per_spw_stats'][spw]['SNR_final']-\
+                                      selfcal_library[target][band]['per_spw_stats'][spw]['SNR_orig']
+                            delta_RMS=selfcal_library[target][band]['per_spw_stats'][spw]['RMS_final']-\
+                                      selfcal_library[target][band]['per_spw_stats'][spw]['RMS_orig']
+                            selfcal_library[target][band]['per_spw_stats'][spw]['delta_SNR']=delta_SNR
+                            selfcal_library[target][band]['per_spw_stats'][spw]['delta_RMS']=delta_RMS
+                            selfcal_library[target][band]['per_spw_stats'][spw]['delta_beamarea']=delta_beamarea
+                            print(sani_target+'_'+band+'_'+str(spw),\
+                                  'Pre SNR: {:0.2f}, Post SNR: {:0.2f} Pre RMS: {:0.3f}, Post RMS: {:0.3f}'.format(selfcal_library[target][band]['per_spw_stats'][spw]['SNR_orig'],\
+                                   selfcal_library[target][band]['per_spw_stats'][spw]['SNR_final'],selfcal_library[target][band]['per_spw_stats'][spw]['RMS_orig']*1000.0,selfcal_library[target][band]['per_spw_stats'][spw]['RMS_final']*1000.0))
+                            if delta_SNR < 0.0:
+                                print('WARNING SPW '+str(spw)+' HAS LOWER SNR POST SELFCAL')
+                            if delta_RMS > 0.0:
+                                print('WARNING SPW '+str(spw)+' HAS HIGHER RMS POST SELFCAL')
+                            if delta_beamarea > 0.05:
+                                print('WARNING SPW '+str(spw)+' HAS A >0.05 CHANGE IN BEAM AREA POST SELFCAL')
+
+            with open('selfcal_library.pickle', 'wb') as handle:
+                pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            with open('selfcal_plan.pickle', 'wb') as handle:
+                pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            step = 12
+            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
+                pickle.dump({
+                    'step': 12,
+
+                    'vislist': vislist if 'vislist' in locals() else None,
+                    'imsize': imsize if 'imsize' in locals() else None,
+                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
+                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
+                    'telescope': telescope if 'telescope' in locals() else None,
+                    'n_ants': n_ants if 'n_ants' in locals() else None,
+
+                    'all_targets': all_targets if 'all_targets' in locals() else None,
+                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
+                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
+                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
+                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
+                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
+                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
+                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
+
+                    # Step 3 variables
+                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
+                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
+                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
+                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
+                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
+                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
+                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
+                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
+
+                    # Step 5 variables
+                    'dirty_per_spw_NF_SNR': dirty_per_spw_NF_SNR if 'dirty_per_spw_NF_SNR' in locals() else None,
+                    'dirty_per_spw_NF_RMS': dirty_per_spw_NF_RMS if 'dirty_per_spw_NF_RMS' in locals() else None,
+                    'per_spw_SNR': per_spw_SNR if 'per_spw_SNR' in locals() else None,
+                    'per_spw_RMS': per_spw_RMS if 'per_spw_RMS' in locals() else None,
+                    'initial_per_spw_NF_SNR': initial_per_spw_NF_SNR if 'initial_per_spw_NF_SNR' in locals() else None,
+                    'initial_per_spw_NF_RMS': initial_per_spw_NF_RMS if 'initial_per_spw_NF_RMS' in locals() else None,
+
+                    # Step 8 variables
+                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
+                    'calibrators': calibrators if 'calibrators' in locals() else None,
+
+                    # Step 9 variables
+                    'final_SNR': final_SNR if 'final_SNR' in locals() else None,
+                    'final_RMS': final_RMS if 'final_RMS' in locals() else None,
+                    'final_NF_SNR': final_NF_SNR if 'final_NF_SNR' in locals() else None,
+                    'final_NF_RMS': final_NF_RMS if 'final_NF_RMS' in locals() else None,
+                    'orig_final_SNR': orig_final_SNR if 'orig_final_SNR' in locals() else None,
+                    'orig_final_RMS': orig_final_RMS if 'orig_final_RMS' in locals() else None,
+                    'orig_final_NF_SNR': orig_final_NF_SNR if 'orig_final_NF_SNR' in locals() else None,
+                    'orig_final_NF_RMS': orig_final_NF_RMS if 'orig_final_NF_RMS' in locals() else None,
+                    'mosaic_final_SNR': mosaic_final_SNR if 'mosaic_final_SNR' in locals() else None,
+                    'mosaic_final_RMS': mosaic_final_RMS if 'mosaic_final_RMS' in locals() else None,
+                    'mosaic_final_NF_SNR': mosaic_final_NF_SNR if 'mosaic_final_NF_SNR' in locals() else None,
+                    'mosaic_final_NF_RMS': mosaic_final_NF_RMS if 'mosaic_final_NF_RMS' in locals() else None,
+                    'nfsnr_modifier': nfsnr_modifier if 'nfsnr_modifier' in locals() else None,
+                    'clean_threshold': clean_threshold if 'clean_threshold' in locals() else None,
+
+                    # Step 10 variables
+                    'final_per_spw_SNR': final_per_spw_SNR if 'final_per_spw_SNR' in locals() else None,
+                    'final_per_spw_RMS': final_per_spw_RMS if 'final_per_spw_RMS' in locals() else None,
+                    'final_per_spw_NF_SNR': final_per_spw_NF_SNR if 'final_per_spw_NF_SNR' in locals() else None,
+                    'final_per_spw_NF_RMS': final_per_spw_NF_RMS if 'final_per_spw_NF_RMS' in locals() else None,
+                    'orig_final_per_spw_SNR': orig_final_per_spw_SNR if 'orig_final_per_spw_SNR' in locals() else None,
+                    'orig_final_per_spw_RMS': orig_final_per_spw_RMS if 'orig_final_per_spw_RMS' in locals() else None,
+                    'orig_final_per_spw_NF_SNR': orig_final_per_spw_NF_SNR if 'orig_final_per_spw_NF_SNR' in locals() else None,
+                    'orig_final_per_spw_NF_RMS': orig_final_per_spw_NF_RMS if 'orig_final_per_spw_NF_RMS' in locals() else None,
+
+                    # Step 11 variables
+                    'suffix': suffix,
+                    'delta_beamarea': delta_beamarea,
+                    'delta_SNR': delta_SNR,
+                    'delta_RMS': delta_RMS
+                }, f)
+            continue
+
+        if step == 12:
+            step_snapshot_file = f'checkpoint_files_step_{step}.pickle'
+            if os.path.exists(step_snapshot_file):
+                restore_step_files_snapshot(step, debug=debug)
+            save_step_files_snapshot(step)
+            ##
+            ## Generate the weblog.
+            ##
+
+            if weblog:
+                generate_weblog(selfcal_library,selfcal_plan,directory='weblog')
+
+                # For simplicity, instead of redoing all of the weblog code, create a new selfcal_library dictionary where all of the sub-fields exist at the
+                # same level as the main field so that they all get their own entry in the weblog, in addition to the entry for the main field.
+                for target in selfcal_library:
+                    new_selfcal_library = {}
+                    new_selfcal_plan = {}
+                    for band in selfcal_library[target].keys():
+                        if selfcal_library[target][band]['obstype'] == 'mosaic':
+                            for fid in selfcal_library[target][band]['sub-fields']:
+                                if target+'_field_'+str(fid) not in new_selfcal_library:
+                                    new_selfcal_library[target+'_field_'+str(fid)] = {}
+                                    new_selfcal_plan[target+'_field_'+str(fid)] = {}
+                                new_selfcal_library[target+'_field_'+str(fid)][band] = selfcal_library[target][band][fid]
+                                new_selfcal_plan[target+'_field_'+str(fid)][band] = selfcal_plan[target][band]
+
+                    if len(new_selfcal_library) > 0:
+                        generate_weblog(new_selfcal_library,new_selfcal_plan,directory='weblog/'+target+'_field-by-field')
+
+            if os.path.exists('checkpoints_auto_selfcal.pickle'):
+                os.remove('checkpoints_auto_selfcal.pickle')
+
+            step = 13
+            continue
