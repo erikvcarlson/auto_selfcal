@@ -49,4 +49,3 @@ markers = [
 
 [tool.setuptools.packages.find]
 include = ["auto_selfcal*"]
-exclude = ["data_to_test*"]
