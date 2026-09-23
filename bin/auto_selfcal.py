@@ -14,5 +14,5 @@ except:
 
 vislist = [] # Edit manually, or leave and let auto_selfcal automatically detect.
 
-auto_selfcal(vislist ,parallel=parallel,use_wproject=False)
+auto_selfcal(vislist ,parallel=parallel)
 
