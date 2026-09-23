@@ -47,5 +47,3 @@ markers = [
     "benchmark: the auto_selfcal benchmark tests."
 ]
 
-[tool.setuptools.packages.find]
-include = ["auto_selfcal*"]
