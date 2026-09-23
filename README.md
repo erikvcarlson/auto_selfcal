@@ -21,6 +21,8 @@ cd </path/to/pipeline/calibrated/*_targets.ms/files>
 casa -c </path/to/auto_selfcal>/bin/auto_selfcal.py
 ```
 
+CASA version 6.6.5 or later is required when using a monolithic CASA distribution.
+
 Or to install into an existing Python environment (note that a Python version for which CASA is [available](https://casadocs.readthedocs.io/en/v6.7.0/notebooks/introduction.html#Compatibility) is required) and run from a directory where pipeline-calibrated *_targets.ms files exist:
 
 ```bash

@@ -368,10 +368,11 @@ def tclean_wrapper(selfcal_library, imagename, band, scales=[0], smallscalebias 
     if gridder=='mosaic' and startmodel!='':
        parallel=False
     if not savemodel_only:
-        if not resume:
+         if not resume:
             for ext in ['.image*', '.mask', '.model*', '.pb*', '.psf*', '.residual*', '.sumwt*','.gridwt*']:
-                os.system('rm -rf '+ imagename + ext)
-        tclean_return = tclean(vis=vlist, 
+               os.system('rm -rf '+ imagename + ext)
+
+         tclean_return = tclean(vis=vlist, 
                imagename = imagename, 
                field=field_str,
                specmode = 'mfs', 
@@ -413,14 +414,13 @@ def tclean_wrapper(selfcal_library, imagename, band, scales=[0], smallscalebias 
                phasecenter=phasecenter,
                startmodel=startmodel,
                datacolumn=datacolumn,spw=spws_per_vis,wprojplanes=wprojplanes, verbose=True)
-
-        if store_threshold != '':
+         if store_threshold != '':
             if telescope == "ALMA" or telescope == "ACA":
                 selfcal_library["clean_threshold_"+store_threshold] = float(threshold[0:-2])
             elif "VLA" in telescope and tclean_return['iterdone'] > 0:
                 selfcal_library["clean_threshold_"+store_threshold] = tclean_return['summaryminor'][0][0][0]['peakRes'][-1]
 
-        if image_mosaic_fields_separately and selfcal_library['obstype'] == 'mosaic':
+         if image_mosaic_fields_separately and selfcal_library['obstype'] == 'mosaic':
             for field_id in selfcal_library['sub-fields-phasecenters']:
                 if 'VLA' in telescope:
                    fov=45.0e9/selfcal_library['meanfreq']*60.0*1.5*0.5

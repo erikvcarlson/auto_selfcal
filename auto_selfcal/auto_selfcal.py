@@ -368,7 +368,7 @@ def auto_selfcal(
             'paths': _list_step_paths()
         }
         with open(f'checkpoint_files_step_{step}.pickle', 'wb') as f:
-            pickle.dump(snapshot, f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(snapshot, f)
 
 
     def restore_step_files_snapshot(step, debug=False):
@@ -642,9 +642,9 @@ def auto_selfcal(
                     gaincalibrator_dict.update(target_gaincalibrator_dict)
 
             with open('selfcal_library.pickle', 'wb') as handle:
-                pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(selfcal_library, handle)
             with open('selfcal_plan.pickle', 'wb') as handle:
-                pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(selfcal_plan, handle)
             print('############## bands for targets after prepare selfcal #####################')
             print("The value for w-project is: ", use_wproject)
             pprint.pprint(bands_for_targets)
@@ -780,9 +780,9 @@ def auto_selfcal(
                     print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
 
                 with open('selfcal_library.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                    pickle.dump(selfcal_library, handle)
                 with open('selfcal_plan.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                    pickle.dump(selfcal_plan, handle)
 
             step = 4   
 
@@ -900,7 +900,7 @@ def auto_selfcal(
 
                 #update selfcal library after each
                 with open('selfcal_library.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                    pickle.dump(selfcal_library, handle)
 
             if debug:
                 print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
@@ -988,9 +988,9 @@ def auto_selfcal(
                                     (selfcal_library[target][band]['telescope'] != 'ACA' or aca_use_nfmask), 'orig', 'orig', spw=spw)
 
                 with open('selfcal_library.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                    pickle.dump(selfcal_library, handle)
                 with open('selfcal_plan.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                    pickle.dump(selfcal_plan, handle)
 
             step = 6
             with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
@@ -1070,10 +1070,10 @@ def auto_selfcal(
             ##
 
             with open('selfcal_library.pickle', 'wb') as handle:
-                pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(selfcal_library, handle)
 
             with open('selfcal_plan.pickle', 'wb') as handle:
-                pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(selfcal_plan, handle)
 
             step = 7
             with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
@@ -1140,10 +1140,10 @@ def auto_selfcal(
                            aca_use_nfmask=aca_use_nfmask,debug=debug,spectral_solution_fraction=spectral_solution_fraction,use_wproject=use_wproject)
 
             with open('selfcal_library.pickle', 'wb') as handle:
-                pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(selfcal_library, handle)
 
             with open('selfcal_plan.pickle', 'wb') as handle:
-                pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(selfcal_plan, handle)
 
             if debug:
                 print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
@@ -1221,10 +1221,10 @@ def auto_selfcal(
                                mode="cocal", calibrators=calibrators, gaincalibrator_dict=gaincalibrator_dict, allow_gain_interpolation=True,use_wproject=use_wproject)
 
                 with open('selfcal_library.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                    pickle.dump(selfcal_library, handle)
 
                 with open('selfcal_plan.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                    pickle.dump(selfcal_plan, handle)
 
                 if debug:
                     print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
@@ -1341,10 +1341,10 @@ def auto_selfcal(
                                mosaic_sub_field=selfcal_library[target][band]["obstype"]=="mosaic")
 
             with open('selfcal_library.pickle', 'wb') as handle:
-                pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(selfcal_library, handle)
 
             with open('selfcal_plan.pickle', 'wb') as handle:
-                pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(selfcal_plan, handle)
 
             if debug:
                 print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
@@ -1453,10 +1453,10 @@ def auto_selfcal(
                                     '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'orig', 'orig', spw=spw)
 
                 with open('selfcal_library.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                    pickle.dump(selfcal_library, handle)
 
                 with open('selfcal_plan.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                    pickle.dump(selfcal_plan, handle)
 
             step = 11
             with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
@@ -1572,10 +1572,10 @@ def auto_selfcal(
             ##
 
             with open('selfcal_library.pickle', 'wb') as handle:
-                pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(selfcal_library, handle)
 
             with open('selfcal_plan.pickle', 'wb') as handle:
-                pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(selfcal_plan, handle)
 
             # If the user asks to align the EBs, then align the original EBs using the alignment values found from the
             # averaged EBs.
@@ -1638,10 +1638,10 @@ def auto_selfcal(
                                 print('WARNING SPW '+str(spw)+' HAS A >0.05 CHANGE IN BEAM AREA POST SELFCAL')
 
             with open('selfcal_library.pickle', 'wb') as handle:
-                pickle.dump(selfcal_library, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(selfcal_library, handle)
 
             with open('selfcal_plan.pickle', 'wb') as handle:
-                pickle.dump(selfcal_plan, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump(selfcal_plan, handle)
 
             step = 12
             with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
