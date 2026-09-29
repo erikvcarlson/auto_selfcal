@@ -42,6 +42,7 @@ def auto_selfcal(
         inf_EB_gaintype='G',
         inf_EB_override=False,
         optimize_spw_combine=True,      # if False, will not attempt per spw or per baseband solutions for any solint except inf_EB
+        uniform_solints=False,
         gaincal_minsnr=2.0,
         gaincal_unflag_minsnr=5.0,
         minsnr_to_proceed=2.95,
