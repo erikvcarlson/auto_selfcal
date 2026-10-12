@@ -5060,3 +5060,60 @@ def is_iterable(obj):
 
 
 
+def save_checkpoint(step,local_vars = locals()):
+   with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
+      pickle.dump({
+         'step': step,
+         'vislist': vislist if 'vislist' in local_vars else None,
+         'imsize': imsize if 'imsize' in local_vars else None,
+         'iscalibrator': iscalibrator if 'iscalibrator' in local_vars else None,
+         'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in local_vars else None,
+         'telescope': telescope if 'telescope' in local_vars else None,
+         'n_ants': n_ants if 'n_ants' in local_vars else None,
+         'all_targets': all_targets if 'all_targets' in local_vars else None,
+         'targets_vis': targets_vis if 'target_vis' in local_vars else None,
+         'vis_for_targets': vis_for_targets if 'vis_for_targets' in local_vars else None,
+         'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in local_vars else None,
+         'vis_overflagged': vis_overflagged if 'vis_overflagged' in local_vars else None,
+         'bands_for_targets': bands_for_targets if 'bands_for_targets' in local_vars else None,
+         'flux_threshold': flux_threshold if 'flux_threshold' in local_vars else None,
+         'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in local_vars else None,
+         'dirty_SNR': dirty_SNR if 'dirty_SNR' in local_vars else None,
+         'dirty_RMS': dirty_RMS if 'dirty_RMS' in local_vars else None,
+         'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in local_vars else None,
+         'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in local_vars else None,
+         'initial_SNR': initial_SNR if 'initial_SNR' in local_vars else None,
+         'initial_RMS': initial_RMS if 'initial_RMS' in local_vars else None,
+         'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in local_vars else None,
+         'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in local_vars else None,
+         'fallback_fields': fallback_fields if 'fallback_fields' in local_vars else None,
+         'calibrators': calibrators if 'calibrators' in local_vars else None,
+         'suffix': suffix if 'suffix' in local_vars else None
+         'final_SNR': final_SNR if 'final_SNR' in local_vars else None,
+         'final_RMS': final_RMS if 'final_RMS' in local_vars else None,
+         'final_NF_SNR': final_NF_SNR if 'final_NF_SNR' in local_vars else None,
+         'final_NF_RMS': final_NF_RMS if 'final_NF_RMS' in local_vars else None,
+         'orig_final_SNR': orig_final_SNR if 'orig_final_SNR' in local_vars else None,
+         'orig_final_RMS': orig_final_RMS if 'orig_final_RMS' in local_vars else None,
+         'orig_final_NF_SNR': orig_final_NF_SNR if 'orig_final_NF_SNR' in local_vars else None,
+         'orig_final_NF_RMS': orig_final_NF_RMS if 'orig_final_NF_RMS' in local_vars else None,
+         'mosaic_final_SNR': mosaic_final_SNR if 'mosaic_final_SNR' in local_vars else None,
+         'mosaic_final_RMS': mosaic_final_RMS if 'mosaic_final_RMS' in local_vars else None,
+         'mosaic_final_NF_SNR': mosaic_final_NF_SNR if 'mosaic_final_NF_SNR' in local_vars else None,
+         'mosaic_final_NF_RMS': mosaic_final_NF_RMS if 'mosaic_final_NF_RMS' in local_vars else None,
+         'nfsnr_modifier': nfsnr_modifier if 'nfsnr_modifier' in local_vars else None,
+         'clean_threshold': clean_threshold if 'clean_threshold' in local_vars else None,
+         'final_per_spw_SNR': final_per_spw_SNR if 'final_per_spw_SNR' in local_vars else None,
+         'final_per_spw_RMS': final_per_spw_RMS if 'final_per_spw_RMS' in local_vars else None,
+         'final_per_spw_NF_SNR': final_per_spw_NF_SNR if 'final_per_spw_NF_SNR' in local_vars else None,
+         'final`_per_spw_NF_RMS': final_per_spw_NF_RMS if 'final_per_spw_NF_RMS' in local_vars else None,
+         'orig_final_per_spw_SNR': orig_final_per_spw_SNR if 'orig_final_per_spw_SNR' in local_vars else None,
+         'orig_final_per_spw_RMS': orig_final_per_spw_RMS if 'orig_final_per_spw_RMS' in local_vars else None,
+         'orig_final_per_spw_NF_SNR': orig_final_per_spw_NF_SNR if 'orig_final_per_spw_NF_SNR' in local_vars else None,
+         'orig_final_per_spw_NF_RMS': orig_final_per_spw_NF_RMS if 'orig_final_per_spw_NF_RMS' in local_vars else None,
+         'delta_beamarea': delta_beamarea if 'delta_beamarea' in local_vars else None,
+         'delta_SNR': delta_SNR if 'delta_SNR' in local_vars else None,
+         'delta_RMS': delta_RMS if 'delta_RMS' in local_vars else None
+      }, f)
+
+   return 

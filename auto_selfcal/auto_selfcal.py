@@ -4,6 +4,8 @@
 # switch heirarchy of selfcal_library such that solint is at a higher level than vis. makes storage of some parameters awkward since they live
 #    in the per vis level instead of per solint
 
+from matplotlib.pyplot import step
+
 from auto_selfcal import split_calibrated_final
 import numpy as np
 import sys
@@ -499,38 +501,8 @@ def auto_selfcal(
 
             step = 2
 
-            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
-                pickle.dump({
-                    'step': 2,
+            save_checkpoint(step,locals())
 
-                    'vislist': vislist if 'vislist' in locals() else None,
-                    'imsize': imsize if 'imsize' in locals() else None,
-                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
-                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
-                    'telescope': telescope if 'telescope' in locals() else None,
-                    'n_ants': n_ants if 'n_ants' in locals() else None,
-
-                    'all_targets': all_targets if 'all_targets' in locals() else None,
-                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
-                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
-                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
-                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
-                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
-                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
-                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
-
-                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
-                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
-                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
-                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
-                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
-                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
-                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
-                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
-                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
-                    'calibrators': calibrators if 'calibrators' in locals() else None,
-                    'suffix': suffix if 'suffix' in locals() else None
-                }, f)
             continue
 
         if step == 2:
@@ -624,7 +596,7 @@ def auto_selfcal(
                             vis_for_targets[target][band]['vislist'], 
                             spectral_average=spectral_average, sort_targets_and_EBs=sort_targets_and_EBs, scale_fov=scale_fov, inf_EB_gaincal_combine=inf_EB_gaincal_combine, 
                             inf_EB_gaintype=inf_EB_gaintype, apply_cal_mode_default=apply_cal_mode_default, do_amp_selfcal=do_amp_selfcal, 
-                            usermask=usermask, usermodel=usermodel,guess_scan_combine=guess_scan_combine,max_solint=max_solint,
+                            usermask=usermask, usermodel=usermodel,guess_scan_combine=guess_scan_combine,max_solint=max_solint, uniform_solints=uniform_solints,
                             iscalibrator=iscalibrator, do_delay_cal=do_delay_cal, shorter_amp_solints=shorter_amp_solints,
                             imsize=imsize, cell=cell, refant=refant, debug=debug)
 
@@ -652,38 +624,8 @@ def auto_selfcal(
 
             step = 3
 
-            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
-                pickle.dump({
-                    'step': 3,
+            save_checkpoint(step,locals())
 
-                    'vislist': vislist if 'vislist' in locals() else None,
-                    'imsize': imsize if 'imsize' in locals() else None,
-                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
-                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
-                    'telescope': telescope if 'telescope' in locals() else None,
-                    'n_ants': n_ants if 'n_ants' in locals() else None,
-
-                    'all_targets': all_targets if 'all_targets' in locals() else None,
-                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
-                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
-                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
-                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
-                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
-                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
-                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
-
-                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
-                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
-                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
-                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
-                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
-                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
-                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
-                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
-                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
-                    'calibrators': calibrators if 'calibrators' in locals() else None,
-                    'suffix': suffix if 'suffix' in locals() else None
-                }, f)
             continue
 
         if step == 3:
@@ -787,38 +729,7 @@ def auto_selfcal(
 
             step = 4   
 
-            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
-                pickle.dump({
-                    'step': 4,
-
-                    'vislist': vislist if 'vislist' in locals() else None,
-                    'imsize': imsize if 'imsize' in locals() else None,
-                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
-                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
-                    'telescope': telescope if 'telescope' in locals() else None,
-                    'n_ants': n_ants if 'n_ants' in locals() else None,
-
-                    'all_targets': all_targets if 'all_targets' in locals() else None,
-                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
-                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
-                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
-                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
-                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
-                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
-                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
-
-                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
-                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
-                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
-                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
-                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
-                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
-                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
-                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
-                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
-                    'calibrators': calibrators if 'calibrators' in locals() else None,
-                    'suffix': suffix if 'suffix' in locals() else None
-                }, f)
+            save_checkpoint(step,locals())
             continue
 
         if step == 4:
@@ -907,40 +818,8 @@ def auto_selfcal(
                 print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
 
             step = 5
-            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
-                pickle.dump({
-                    'step': 5,
-
-                    'vislist': vislist if 'vislist' in locals() else None,
-                    'imsize': imsize if 'imsize' in locals() else None,
-                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
-                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
-                    'telescope': telescope if 'telescope' in locals() else None,
-                    'n_ants': n_ants if 'n_ants' in locals() else None,
-
-                    'all_targets': all_targets if 'all_targets' in locals() else None,
-                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
-                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
-                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
-                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
-                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
-                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
-                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
-
-                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
-                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
-                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
-                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
-                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
-                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
-                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
-                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
-                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
-                    'calibrators': calibrators if 'calibrators' in locals() else None,
-                    'suffix': suffix if 'suffix' in locals() else None
-                }, f)
+            save_checkpoint(step,locals())
             continue
-
 
         if step == 5:
             
@@ -994,49 +873,7 @@ def auto_selfcal(
                     pickle.dump(selfcal_plan, handle)
 
             step = 6
-            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
-                pickle.dump({
-                    'step': 6,
-
-                    'vislist': vislist if 'vislist' in locals() else None,
-                    'imsize': imsize if 'imsize' in locals() else None,
-                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
-                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
-                    'telescope': telescope if 'telescope' in locals() else None,
-                    'n_ants': n_ants if 'n_ants' in locals() else None,
-
-                    'all_targets': all_targets if 'all_targets' in locals() else None,
-                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
-                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
-                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
-                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
-                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
-                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
-                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
-
-                    # Step 3 variables
-                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
-                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
-                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
-                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
-                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
-                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
-                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
-                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
-
-                    # Step 5 variables
-                    'dirty_per_spw_NF_SNR': dirty_per_spw_NF_SNR,
-                    'dirty_per_spw_NF_RMS': dirty_per_spw_NF_RMS,
-                    'per_spw_SNR': per_spw_SNR,
-                    'per_spw_RMS': per_spw_RMS,
-                    'initial_per_spw_NF_SNR': initial_per_spw_NF_SNR,
-                    'initial_per_spw_NF_RMS': initial_per_spw_NF_RMS,
-
-                    # Later-step placeholders
-                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
-                    'calibrators': calibrators if 'calibrators' in locals() else None,
-                    'suffix': suffix if 'suffix' in locals() else None
-                }, f)
+            save_checkpoint(step,locals())
             continue
 
         if step == 6:
@@ -1077,49 +914,7 @@ def auto_selfcal(
                 pickle.dump(selfcal_plan, handle)
 
             step = 7
-            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
-                pickle.dump({
-                    'step': 7,
-
-                    'vislist': vislist if 'vislist' in locals() else None,
-                    'imsize': imsize if 'imsize' in locals() else None,
-                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
-                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
-                    'telescope': telescope if 'telescope' in locals() else None,
-                    'n_ants': n_ants if 'n_ants' in locals() else None,
-
-                    'all_targets': all_targets if 'all_targets' in locals() else None,
-                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
-                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
-                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
-                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
-                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
-                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
-                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
-
-                    # Step 3 variables
-                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
-                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
-                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
-                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
-                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
-                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
-                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
-                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
-
-                    # Step 5 variables
-                    'dirty_per_spw_NF_SNR': dirty_per_spw_NF_SNR if 'dirty_per_spw_NF_SNR' in locals() else None,
-                    'dirty_per_spw_NF_RMS': dirty_per_spw_NF_RMS if 'dirty_per_spw_NF_RMS' in locals() else None,
-                    'per_spw_SNR': per_spw_SNR if 'per_spw_SNR' in locals() else None,
-                    'per_spw_RMS': per_spw_RMS if 'per_spw_RMS' in locals() else None,
-                    'initial_per_spw_NF_SNR': initial_per_spw_NF_SNR if 'initial_per_spw_NF_SNR' in locals() else None,
-                    'initial_per_spw_NF_RMS': initial_per_spw_NF_RMS if 'initial_per_spw_NF_RMS' in locals() else None,
-
-                    # Later-step placeholders
-                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
-                    'calibrators': calibrators if 'calibrators' in locals() else None,
-                    'suffix': suffix if 'suffix' in locals() else None
-                }, f)
+            save_checkpoint(step,locals())
             continue
 
         if step == 7:
@@ -1150,49 +945,7 @@ def auto_selfcal(
                 print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
 
             step = 8
-            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
-                pickle.dump({
-                    'step': 8,
-
-                    'vislist': vislist if 'vislist' in locals() else None,
-                    'imsize': imsize if 'imsize' in locals() else None,
-                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
-                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
-                    'telescope': telescope if 'telescope' in locals() else None,
-                    'n_ants': n_ants if 'n_ants' in locals() else None,
-
-                    'all_targets': all_targets if 'all_targets' in locals() else None,
-                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
-                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
-                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
-                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
-                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
-                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
-                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
-
-                    # Step 3 variables
-                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
-                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
-                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
-                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
-                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
-                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
-                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
-                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
-
-                    # Step 5 variables
-                    'dirty_per_spw_NF_SNR': dirty_per_spw_NF_SNR if 'dirty_per_spw_NF_SNR' in locals() else None,
-                    'dirty_per_spw_NF_RMS': dirty_per_spw_NF_RMS if 'dirty_per_spw_NF_RMS' in locals() else None,
-                    'per_spw_SNR': per_spw_SNR if 'per_spw_SNR' in locals() else None,
-                    'per_spw_RMS': per_spw_RMS if 'per_spw_RMS' in locals() else None,
-                    'initial_per_spw_NF_SNR': initial_per_spw_NF_SNR if 'initial_per_spw_NF_SNR' in locals() else None,
-                    'initial_per_spw_NF_RMS': initial_per_spw_NF_RMS if 'initial_per_spw_NF_RMS' in locals() else None,
-
-                    # Later-step placeholders
-                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
-                    'calibrators': calibrators if 'calibrators' in locals() else None,
-                    'suffix': suffix if 'suffix' in locals() else None
-                }, f)
+            save_checkpoint(step,locals())
             continue
 
         if step == 8:
@@ -1235,52 +988,7 @@ def auto_selfcal(
             ## Mechanics are likely to be a bit more simple since I expect we'd only try a single solint=inf solution
             ##
 
-            step = 9
-            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
-                pickle.dump({
-                    'step': 9,
-
-                    'vislist': vislist if 'vislist' in locals() else None,
-                    'imsize': imsize if 'imsize' in locals() else None,
-                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
-                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
-                    'telescope': telescope if 'telescope' in locals() else None,
-                    'n_ants': n_ants if 'n_ants' in locals() else None,
-
-                    'all_targets': all_targets if 'all_targets' in locals() else None,
-                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
-                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
-                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
-                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
-                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
-                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
-                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
-
-                    # Step 3 variables
-                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
-                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
-                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
-                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
-                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
-                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
-                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
-                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
-
-                    # Step 5 variables
-                    'dirty_per_spw_NF_SNR': dirty_per_spw_NF_SNR if 'dirty_per_spw_NF_SNR' in locals() else None,
-                    'dirty_per_spw_NF_RMS': dirty_per_spw_NF_RMS if 'dirty_per_spw_NF_RMS' in locals() else None,
-                    'per_spw_SNR': per_spw_SNR if 'per_spw_SNR' in locals() else None,
-                    'per_spw_RMS': per_spw_RMS if 'per_spw_RMS' in locals() else None,
-                    'initial_per_spw_NF_SNR': initial_per_spw_NF_SNR if 'initial_per_spw_NF_SNR' in locals() else None,
-                    'initial_per_spw_NF_RMS': initial_per_spw_NF_RMS if 'initial_per_spw_NF_RMS' in locals() else None,
-
-                    # Step 8 variables
-                    'fallback_fields': fallback_fields,
-                    'calibrators': calibrators,
-
-                    # Later-step placeholders
-                    'suffix': suffix if 'suffix' in locals() else None
-                }, f)
+            save_checkpoint(step,locals())
             continue
 
         if step == 9:
@@ -1351,67 +1059,7 @@ def auto_selfcal(
                 print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
 
             step = 10
-            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
-                pickle.dump({
-                    'step': 10,
-
-                    'vislist': vislist if 'vislist' in locals() else None,
-                    'imsize': imsize if 'imsize' in locals() else None,
-                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
-                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
-                    'telescope': telescope if 'telescope' in locals() else None,
-                    'n_ants': n_ants if 'n_ants' in locals() else None,
-
-                    'all_targets': all_targets if 'all_targets' in locals() else None,
-                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
-                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
-                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
-                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
-                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
-                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
-                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
-
-                    # Step 3 variables
-                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
-                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
-                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
-                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
-                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
-                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
-                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
-                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
-
-                    # Step 5 variables
-                    'dirty_per_spw_NF_SNR': dirty_per_spw_NF_SNR if 'dirty_per_spw_NF_SNR' in locals() else None,
-                    'dirty_per_spw_NF_RMS': dirty_per_spw_NF_RMS if 'dirty_per_spw_NF_RMS' in locals() else None,
-                    'per_spw_SNR': per_spw_SNR if 'per_spw_SNR' in locals() else None,
-                    'per_spw_RMS': per_spw_RMS if 'per_spw_RMS' in locals() else None,
-                    'initial_per_spw_NF_SNR': initial_per_spw_NF_SNR if 'initial_per_spw_NF_SNR' in locals() else None,
-                    'initial_per_spw_NF_RMS': initial_per_spw_NF_RMS if 'initial_per_spw_NF_RMS' in locals() else None,
-
-                    # Step 8 variables
-                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
-                    'calibrators': calibrators if 'calibrators' in locals() else None,
-
-                    # Step 9 variables
-                    'final_SNR': final_SNR,
-                    'final_RMS': final_RMS,
-                    'final_NF_SNR': final_NF_SNR,
-                    'final_NF_RMS': final_NF_RMS,
-                    'orig_final_SNR': orig_final_SNR,
-                    'orig_final_RMS': orig_final_RMS,
-                    'orig_final_NF_SNR': orig_final_NF_SNR,
-                    'orig_final_NF_RMS': orig_final_NF_RMS,
-                    'mosaic_final_SNR': mosaic_final_SNR,
-                    'mosaic_final_RMS': mosaic_final_RMS,
-                    'mosaic_final_NF_SNR': mosaic_final_NF_SNR,
-                    'mosaic_final_NF_RMS': mosaic_final_NF_RMS,
-                    'nfsnr_modifier': nfsnr_modifier,
-                    'clean_threshold': clean_threshold,
-
-                    # Later-step placeholders
-                    'suffix': suffix if 'suffix' in locals() else None
-                }, f)
+            save_checkpoint(step,locals())
             continue
 
         if step == 10:
@@ -1460,77 +1108,7 @@ def auto_selfcal(
                     pickle.dump(selfcal_plan, handle)
 
             step = 11
-            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
-                pickle.dump({
-                    'step': 11,
-
-                    'vislist': vislist if 'vislist' in locals() else None,
-                    'imsize': imsize if 'imsize' in locals() else None,
-                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
-                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
-                    'telescope': telescope if 'telescope' in locals() else None,
-                    'n_ants': n_ants if 'n_ants' in locals() else None,
-
-                    'all_targets': all_targets if 'all_targets' in locals() else None,
-                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
-                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
-                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
-                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
-                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
-                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
-                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
-
-                    # Step 3 variables
-                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
-                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
-                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
-                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
-                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
-                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
-                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
-                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
-
-                    # Step 5 variables
-                    'dirty_per_spw_NF_SNR': dirty_per_spw_NF_SNR if 'dirty_per_spw_NF_SNR' in locals() else None,
-                    'dirty_per_spw_NF_RMS': dirty_per_spw_NF_RMS if 'dirty_per_spw_NF_RMS' in locals() else None,
-                    'per_spw_SNR': per_spw_SNR if 'per_spw_SNR' in locals() else None,
-                    'per_spw_RMS': per_spw_RMS if 'per_spw_RMS' in locals() else None,
-                    'initial_per_spw_NF_SNR': initial_per_spw_NF_SNR if 'initial_per_spw_NF_SNR' in locals() else None,
-                    'initial_per_spw_NF_RMS': initial_per_spw_NF_RMS if 'initial_per_spw_NF_RMS' in locals() else None,
-
-                    # Step 8 variables
-                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
-                    'calibrators': calibrators if 'calibrators' in locals() else None,
-
-                    # Step 9 variables
-                    'final_SNR': final_SNR if 'final_SNR' in locals() else None,
-                    'final_RMS': final_RMS if 'final_RMS' in locals() else None,
-                    'final_NF_SNR': final_NF_SNR if 'final_NF_SNR' in locals() else None,
-                    'final_NF_RMS': final_NF_RMS if 'final_NF_RMS' in locals() else None,
-                    'orig_final_SNR': orig_final_SNR if 'orig_final_SNR' in locals() else None,
-                    'orig_final_RMS': orig_final_RMS if 'orig_final_RMS' in locals() else None,
-                    'orig_final_NF_SNR': orig_final_NF_SNR if 'orig_final_NF_SNR' in locals() else None,
-                    'orig_final_NF_RMS': orig_final_NF_RMS if 'orig_final_NF_RMS' in locals() else None,
-                    'mosaic_final_SNR': mosaic_final_SNR if 'mosaic_final_SNR' in locals() else None,
-                    'mosaic_final_RMS': mosaic_final_RMS if 'mosaic_final_RMS' in locals() else None,
-                    'mosaic_final_NF_SNR': mosaic_final_NF_SNR if 'mosaic_final_NF_SNR' in locals() else None,
-                    'mosaic_final_NF_RMS': mosaic_final_NF_RMS if 'mosaic_final_NF_RMS' in locals() else None,
-                    'nfsnr_modifier': nfsnr_modifier if 'nfsnr_modifier' in locals() else None,
-                    'clean_threshold': clean_threshold if 'clean_threshold' in locals() else None,
-
-                    # Step 10 variables
-                    'final_per_spw_SNR': final_per_spw_SNR,
-                    'final_per_spw_RMS': final_per_spw_RMS,
-                    'final_per_spw_NF_SNR': final_per_spw_NF_SNR,
-                    'final_per_spw_NF_RMS': final_per_spw_NF_RMS,
-                    'orig_final_per_spw_SNR': orig_final_per_spw_SNR,
-                    'orig_final_per_spw_RMS': orig_final_per_spw_RMS,
-                    'orig_final_per_spw_NF_SNR': orig_final_per_spw_NF_SNR,
-                    'orig_final_per_spw_NF_RMS': orig_final_per_spw_NF_RMS,
-
-                    # Later-step placeholders
-                    'suffix': suffix if 'suffix' in locals() else None
-                }, f)
+            save_checkpoint(step,locals())
             continue
 
         if step == 11:
@@ -1645,80 +1223,7 @@ def auto_selfcal(
                 pickle.dump(selfcal_plan, handle)
 
             step = 12
-            with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
-                pickle.dump({
-                    'step': 12,
-
-                    'vislist': vislist if 'vislist' in locals() else None,
-                    'imsize': imsize if 'imsize' in locals() else None,
-                    'iscalibrator': iscalibrator if 'iscalibrator' in locals() else None,
-                    'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in locals() else None,
-                    'telescope': telescope if 'telescope' in locals() else None,
-                    'n_ants': n_ants if 'n_ants' in locals() else None,
-
-                    'all_targets': all_targets if 'all_targets' in locals() else None,
-                    'targets_vis': targets_vis if 'target_vis' in locals() else None,
-                    'vis_for_targets': vis_for_targets if 'vis_for_targets' in locals() else None,
-                    'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in locals() else None,
-                    'vis_overflagged': vis_overflagged if 'vis_overflagged' in locals() else None,
-                    'bands_for_targets': bands_for_targets if 'bands_for_targets' in locals() else None,
-                    'flux_threshold': flux_threshold if 'flux_threshold' in locals() else None,
-                    'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in locals() else None,
-
-                    # Step 3 variables
-                    'dirty_SNR': dirty_SNR if 'dirty_SNR' in locals() else None,
-                    'dirty_RMS': dirty_RMS if 'dirty_RMS' in locals() else None,
-                    'dirty_NF_SNR': dirty_NF_SNR if 'dirty_NF_SNR' in locals() else None,
-                    'dirty_NF_RMS': dirty_NF_RMS if 'dirty_NF_RMS' in locals() else None,
-                    'initial_SNR': initial_SNR if 'initial_SNR' in locals() else None,
-                    'initial_RMS': initial_RMS if 'initial_RMS' in locals() else None,
-                    'initial_NF_SNR': initial_NF_SNR if 'initial_NF_SNR' in locals() else None,
-                    'initial_NF_RMS': initial_NF_RMS if 'initial_NF_RMS' in locals() else None,
-
-                    # Step 5 variables
-                    'dirty_per_spw_NF_SNR': dirty_per_spw_NF_SNR if 'dirty_per_spw_NF_SNR' in locals() else None,
-                    'dirty_per_spw_NF_RMS': dirty_per_spw_NF_RMS if 'dirty_per_spw_NF_RMS' in locals() else None,
-                    'per_spw_SNR': per_spw_SNR if 'per_spw_SNR' in locals() else None,
-                    'per_spw_RMS': per_spw_RMS if 'per_spw_RMS' in locals() else None,
-                    'initial_per_spw_NF_SNR': initial_per_spw_NF_SNR if 'initial_per_spw_NF_SNR' in locals() else None,
-                    'initial_per_spw_NF_RMS': initial_per_spw_NF_RMS if 'initial_per_spw_NF_RMS' in locals() else None,
-
-                    # Step 8 variables
-                    'fallback_fields': fallback_fields if 'fallback_fields' in locals() else None,
-                    'calibrators': calibrators if 'calibrators' in locals() else None,
-
-                    # Step 9 variables
-                    'final_SNR': final_SNR if 'final_SNR' in locals() else None,
-                    'final_RMS': final_RMS if 'final_RMS' in locals() else None,
-                    'final_NF_SNR': final_NF_SNR if 'final_NF_SNR' in locals() else None,
-                    'final_NF_RMS': final_NF_RMS if 'final_NF_RMS' in locals() else None,
-                    'orig_final_SNR': orig_final_SNR if 'orig_final_SNR' in locals() else None,
-                    'orig_final_RMS': orig_final_RMS if 'orig_final_RMS' in locals() else None,
-                    'orig_final_NF_SNR': orig_final_NF_SNR if 'orig_final_NF_SNR' in locals() else None,
-                    'orig_final_NF_RMS': orig_final_NF_RMS if 'orig_final_NF_RMS' in locals() else None,
-                    'mosaic_final_SNR': mosaic_final_SNR if 'mosaic_final_SNR' in locals() else None,
-                    'mosaic_final_RMS': mosaic_final_RMS if 'mosaic_final_RMS' in locals() else None,
-                    'mosaic_final_NF_SNR': mosaic_final_NF_SNR if 'mosaic_final_NF_SNR' in locals() else None,
-                    'mosaic_final_NF_RMS': mosaic_final_NF_RMS if 'mosaic_final_NF_RMS' in locals() else None,
-                    'nfsnr_modifier': nfsnr_modifier if 'nfsnr_modifier' in locals() else None,
-                    'clean_threshold': clean_threshold if 'clean_threshold' in locals() else None,
-
-                    # Step 10 variables
-                    'final_per_spw_SNR': final_per_spw_SNR if 'final_per_spw_SNR' in locals() else None,
-                    'final_per_spw_RMS': final_per_spw_RMS if 'final_per_spw_RMS' in locals() else None,
-                    'final_per_spw_NF_SNR': final_per_spw_NF_SNR if 'final_per_spw_NF_SNR' in locals() else None,
-                    'final_per_spw_NF_RMS': final_per_spw_NF_RMS if 'final_per_spw_NF_RMS' in locals() else None,
-                    'orig_final_per_spw_SNR': orig_final_per_spw_SNR if 'orig_final_per_spw_SNR' in locals() else None,
-                    'orig_final_per_spw_RMS': orig_final_per_spw_RMS if 'orig_final_per_spw_RMS' in locals() else None,
-                    'orig_final_per_spw_NF_SNR': orig_final_per_spw_NF_SNR if 'orig_final_per_spw_NF_SNR' in locals() else None,
-                    'orig_final_per_spw_NF_RMS': orig_final_per_spw_NF_RMS if 'orig_final_per_spw_NF_RMS' in locals() else None,
-
-                    # Step 11 variables
-                    'suffix': suffix,
-                    'delta_beamarea': delta_beamarea,
-                    'delta_SNR': delta_SNR,
-                    'delta_RMS': delta_RMS
-                }, f)
+            save_checkpoint(step,locals())
             continue
 
         if step == 12:
