@@ -432,7 +432,6 @@ def auto_selfcal(
         shorter_amp_solints = checkpoint.get('shorter_amp_solints', shorter_amp_solints)
         telescope = checkpoint.get('telescope', None)
         n_ants = checkpoint.get('n_ants', None)
-
         all_targets = checkpoint.get('all_targets', None)
         targets_vis = checkpoint.get('targets_vis', None)
         vis_for_targets = checkpoint.get('vis_for_targets', None)
@@ -441,23 +440,19 @@ def auto_selfcal(
         bands_for_targets = checkpoint.get('bands_for_targets', None)
         flux_threshold = checkpoint.get('flux_threshold', None)
         gaincalibrator_dict = checkpoint.get('gaincalibrator_dict', {})
-        dirty_SNR = checkpoint.get('dirty_SNR', None)
-        dirty_RMS = checkpoint.get('dirty_RMS', None)
-        dirty_NF_SNR = checkpoint.get('dirty_NF_SNR', None)
-        dirty_NF_RMS = checkpoint.get('dirty_NF_RMS', None)
-        initial_SNR = checkpoint.get('initial_SNR', None)
-        initial_RMS = checkpoint.get('initial_RMS', None)
-        initial_NF_SNR = checkpoint.get('initial_NF_SNR', None)
-        initial_NF_RMS = checkpoint.get('initial_NF_RMS', None)
         fallback_fields = checkpoint.get('fallback_fields', None)
         calibrators = checkpoint.get('calibrators', None)
         suffix = checkpoint.get('suffix', None)
-
-        if step >= 3 and os.path.exists('selfcal_library.pickle') and os.path.exists('selfcal_plan.pickle'):
-            with open('selfcal_library.pickle', 'rb') as handle:
-                selfcal_library = pickle.load(handle)
-            with open('selfcal_plan.pickle', 'rb') as handle:
-                selfcal_plan = pickle.load(handle)
+        clean_threshold = checkpoint.get('clean_threshold', None)
+        nfsnr_modifier = checkpoint.get('nfsnr_modifier', None)
+        selfcal_library = checkpoint.get('selfcal_library', None)
+        selfcal_plan = checkpoint.get('selfcal_plan', None)
+    
+        # if step >= 3 and os.path.exists('selfcal_library.pickle') and os.path.exists('selfcal_plan.pickle'):
+        #     with open('selfcal_library.pickle', 'rb') as handle:
+        #         selfcal_library = pickle.load(handle)
+        #     with open('selfcal_plan.pickle', 'rb') as handle:
+        #         selfcal_plan = pickle.load(handle)
 
     else:
         print("No checkpoint found, starting from Step 1...")
@@ -614,10 +609,10 @@ def auto_selfcal(
                     selfcal_library[target][band]['telescope']=telescope
                     gaincalibrator_dict.update(target_gaincalibrator_dict)
 
-            with open('selfcal_library.pickle', 'wb') as handle:
-                pickle.dump(selfcal_library, handle)
-            with open('selfcal_plan.pickle', 'wb') as handle:
-                pickle.dump(selfcal_plan, handle)
+            # with open('selfcal_library.pickle', 'wb') as handle:
+            #     pickle.dump(selfcal_library, handle)
+            # with open('selfcal_plan.pickle', 'wb') as handle:
+            #     pickle.dump(selfcal_plan, handle)
             print('############## bands for targets after prepare selfcal #####################')
             print("The value for w-project is: ", use_wproject)
             pprint.pprint(bands_for_targets)
@@ -722,10 +717,10 @@ def auto_selfcal(
                 if debug:
                     print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
 
-                with open('selfcal_library.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_library, handle)
-                with open('selfcal_plan.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_plan, handle)
+                # with open('selfcal_library.pickle', 'wb') as handle:
+                #     pickle.dump(selfcal_library, handle)
+                # with open('selfcal_plan.pickle', 'wb') as handle:
+                #     pickle.dump(selfcal_plan, handle)
 
             step = 4   
 
@@ -811,8 +806,8 @@ def auto_selfcal(
                         selfcal_library[target][band][fid]['RMS_NF_curr']=mosaic_initial_NF_RMS[fid] if mosaic_initial_NF_RMS[fid] > 0 else mosaic_initial_RMS[fid]
 
                 #update selfcal library after each
-                with open('selfcal_library.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_library, handle)
+                # with open('selfcal_library.pickle', 'wb') as handle:
+                #     pickle.dump(selfcal_library, handle)
 
             if debug:
                 print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
@@ -867,10 +862,10 @@ def auto_selfcal(
                                     '_initial.image.tt0', sani_target+'_'+band+'_'+str(spw)+'_initial.mask', '', selfcal_library[target][band], 
                                     (selfcal_library[target][band]['telescope'] != 'ACA' or aca_use_nfmask), 'orig', 'orig', spw=spw)
 
-                with open('selfcal_library.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_library, handle)
-                with open('selfcal_plan.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_plan, handle)
+                # with open('selfcal_library.pickle', 'wb') as handle:
+                #     pickle.dump(selfcal_library, handle)
+                # with open('selfcal_plan.pickle', 'wb') as handle:
+                #     pickle.dump(selfcal_plan, handle)
 
             step = 6
             save_checkpoint(step,locals())
@@ -907,11 +902,11 @@ def auto_selfcal(
             ## Save self-cal library
             ##
 
-            with open('selfcal_library.pickle', 'wb') as handle:
-                pickle.dump(selfcal_library, handle)
+            # with open('selfcal_library.pickle', 'wb') as handle:
+            #     pickle.dump(selfcal_library, handle)
 
-            with open('selfcal_plan.pickle', 'wb') as handle:
-                pickle.dump(selfcal_plan, handle)
+            # with open('selfcal_plan.pickle', 'wb') as handle:
+            #     pickle.dump(selfcal_plan, handle)
 
             step = 7
             save_checkpoint(step,locals())
@@ -935,11 +930,11 @@ def auto_selfcal(
                            gaincalibrator_dict=gaincalibrator_dict, allow_gain_interpolation=allow_gain_interpolation, guess_scan_combine=guess_scan_combine, \
                            aca_use_nfmask=aca_use_nfmask,debug=debug,spectral_solution_fraction=spectral_solution_fraction,use_wproject=use_wproject)
 
-            with open('selfcal_library.pickle', 'wb') as handle:
-                pickle.dump(selfcal_library, handle)
+            # with open('selfcal_library.pickle', 'wb') as handle:
+            #     pickle.dump(selfcal_library, handle)
 
-            with open('selfcal_plan.pickle', 'wb') as handle:
-                pickle.dump(selfcal_plan, handle)
+            # with open('selfcal_plan.pickle', 'wb') as handle:
+            #     pickle.dump(selfcal_plan, handle)
 
             if debug:
                 print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
@@ -974,11 +969,11 @@ def auto_selfcal(
                                second_iter_solmode=second_iter_solmode, unflag_fb_to_prev_solint=unflag_fb_to_prev_solint, rerank_refants=rerank_refants, \
                                mode="cocal", calibrators=calibrators, gaincalibrator_dict=gaincalibrator_dict, allow_gain_interpolation=True,use_wproject=use_wproject)
 
-                with open('selfcal_library.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_library, handle)
+                # with open('selfcal_library.pickle', 'wb') as handle:
+                #     pickle.dump(selfcal_library, handle)
 
-                with open('selfcal_plan.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_plan, handle)
+                # with open('selfcal_plan.pickle', 'wb') as handle:
+                #     pickle.dump(selfcal_plan, handle)
 
                 if debug:
                     print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
@@ -1049,11 +1044,11 @@ def auto_selfcal(
                                imagename+'_final.mask', '', selfcal_library[target][band][fid], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'orig', 'orig',
                                mosaic_sub_field=selfcal_library[target][band]["obstype"]=="mosaic")
 
-            with open('selfcal_library.pickle', 'wb') as handle:
-                pickle.dump(selfcal_library, handle)
+            # with open('selfcal_library.pickle', 'wb') as handle:
+            #     pickle.dump(selfcal_library, handle)
 
-            with open('selfcal_plan.pickle', 'wb') as handle:
-                pickle.dump(selfcal_plan, handle)
+            # with open('selfcal_plan.pickle', 'wb') as handle:
+            #     pickle.dump(selfcal_plan, handle)
 
             if debug:
                 print(json.dumps(selfcal_library, indent=4, cls=NpEncoder))
@@ -1101,11 +1096,11 @@ def auto_selfcal(
                                     sani_target+'_'+band+'_'+str(spw)+'_initial.image.tt0', sani_target+'_'+band+'_'+str(spw)+'_final.mask',
                                     '', selfcal_library[target][band], (selfcal_library[target][band]['telescope'] !='ACA' or aca_use_nfmask), 'orig', 'orig', spw=spw)
 
-                with open('selfcal_library.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_library, handle)
+                # with open('selfcal_library.pickle', 'wb') as handle:
+                #     pickle.dump(selfcal_library, handle)
 
-                with open('selfcal_plan.pickle', 'wb') as handle:
-                    pickle.dump(selfcal_plan, handle)
+                # with open('selfcal_plan.pickle', 'wb') as handle:
+                #     pickle.dump(selfcal_plan, handle)
 
             step = 11
             save_checkpoint(step,locals())
@@ -1150,10 +1145,10 @@ def auto_selfcal(
             ## Save final library results
             ##
 
-            with open('selfcal_library.pickle', 'wb') as handle:
+            with open('selfcal_library_final.pickle', 'wb') as handle:
                 pickle.dump(selfcal_library, handle)
 
-            with open('selfcal_plan.pickle', 'wb') as handle:
+            with open('selfcal_plan_final.pickle', 'wb') as handle:
                 pickle.dump(selfcal_plan, handle)
 
             # If the user asks to align the EBs, then align the original EBs using the alignment values found from the
@@ -1216,11 +1211,11 @@ def auto_selfcal(
                             if delta_beamarea > 0.05:
                                 print('WARNING SPW '+str(spw)+' HAS A >0.05 CHANGE IN BEAM AREA POST SELFCAL')
 
-            with open('selfcal_library.pickle', 'wb') as handle:
-                pickle.dump(selfcal_library, handle)
+            # with open('selfcal_library.pickle', 'wb') as handle:
+            #     pickle.dump(selfcal_library, handle)
 
-            with open('selfcal_plan.pickle', 'wb') as handle:
-                pickle.dump(selfcal_plan, handle)
+            # with open('selfcal_plan.pickle', 'wb') as handle:
+            #     pickle.dump(selfcal_plan, handle)
 
             step = 12
             save_checkpoint(step,locals())
