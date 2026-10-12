@@ -444,7 +444,6 @@ def auto_selfcal(
         calibrators = checkpoint.get('calibrators', None)
         suffix = checkpoint.get('suffix', None)
         clean_threshold = checkpoint.get('clean_threshold', None)
-        nfsnr_modifier = checkpoint.get('nfsnr_modifier', None)
         selfcal_library = checkpoint.get('selfcal_library', None)
         selfcal_plan = checkpoint.get('selfcal_plan', None)
     
