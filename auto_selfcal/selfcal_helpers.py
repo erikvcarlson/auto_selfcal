@@ -5079,7 +5079,7 @@ def save_checkpoint(step,local_vars = locals()):
          'flux_threshold': flux_threshold if 'flux_threshold' in local_vars else None,
          'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in local_vars else None,
          'calibrators': calibrators if 'calibrators' in local_vars else None,
-         'suffix': suffix if 'suffix' in local_vars else None
+         'suffix': suffix if 'suffix' in local_vars else None,
          'clean_threshold': clean_threshold if 'clean_threshold' in local_vars else None,
          'selfcal_library': selfcal_library if 'selfcal_library' in local_vars else None,
          'selfcal_plan': selfcal_plan if 'selfcal_plan' in local_vars else None
