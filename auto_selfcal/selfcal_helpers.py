@@ -6,6 +6,7 @@ import math
 import os
 import scipy.cluster.hierarchy as hc
 import copy
+import pickle
 
 import casatools
 from casaplotms import plotms
@@ -5056,33 +5057,3 @@ def is_iterable(obj):
         return True
     except TypeError:
         return False
-
-
-
-
-def save_checkpoint(step,local_vars = locals()):
-   with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
-      pickle.dump({
-         'step': step,
-         'vislist': vislist if 'vislist' in local_vars else None,
-         'imsize': imsize if 'imsize' in local_vars else None,
-         'iscalibrator': iscalibrator if 'iscalibrator' in local_vars else None,
-         'shorter_amp_solints': shorter_amp_solints if 'shorter_amp_solints' in local_vars else None,
-         'telescope': telescope if 'telescope' in local_vars else None,
-         'n_ants': n_ants if 'n_ants' in local_vars else None,
-         'all_targets': all_targets if 'all_targets' in local_vars else None,
-         'targets_vis': targets_vis if 'target_vis' in local_vars else None,
-         'vis_for_targets': vis_for_targets if 'vis_for_targets' in local_vars else None,
-         'vis_missing_fields': vis_missing_fields if 'vis_missing_fields' in local_vars else None,
-         'vis_overflagged': vis_overflagged if 'vis_overflagged' in local_vars else None,
-         'bands_for_targets': bands_for_targets if 'bands_for_targets' in local_vars else None,
-         'flux_threshold': flux_threshold if 'flux_threshold' in local_vars else None,
-         'gaincalibrator_dict': gaincalibrator_dict if 'gaincalibrator_dict' in local_vars else None,
-         'calibrators': calibrators if 'calibrators' in local_vars else None,
-         'suffix': suffix if 'suffix' in local_vars else None,
-         'clean_threshold': clean_threshold if 'clean_threshold' in local_vars else None,
-         'selfcal_library': selfcal_library if 'selfcal_library' in local_vars else None,
-         'selfcal_plan': selfcal_plan if 'selfcal_plan' in local_vars else None
-      }, f)
-
-   return 
