@@ -33,6 +33,38 @@ from casatools import msmetadata as msmdtool
 
 msmd = msmdtool()
 
+def save_checkpoint(step, local_vars):
+    checkpoint = {
+        'step': step,
+        'vislist': local_vars.get('vislist'),
+        'imsize': local_vars.get('imsize'),
+        'iscalibrator': local_vars.get('iscalibrator'),
+        'shorter_amp_solints': local_vars.get('shorter_amp_solints'),
+        'telescope': local_vars.get('telescope'),
+        'n_ants': local_vars.get('n_ants'),
+        'all_targets': local_vars.get('all_targets'),
+        'targets_vis': local_vars.get('targets_vis'),
+        'vis_for_targets': local_vars.get('vis_for_targets'),
+        'vis_missing_fields': local_vars.get('vis_missing_fields'),
+        'vis_overflagged': local_vars.get('vis_overflagged'),
+        'bands_for_targets': local_vars.get('bands_for_targets'),
+        'flux_threshold': local_vars.get('flux_threshold'),
+        'gaincalibrator_dict': local_vars.get('gaincalibrator_dict'),
+        'calibrators': local_vars.get('calibrators'),
+        'suffix': local_vars.get('suffix'),
+        'clean_threshold': local_vars.get('clean_threshold'),
+        'selfcal_library': local_vars.get('selfcal_library'),
+        'selfcal_plan': local_vars.get('selfcal_plan')
+    }
+
+    with open('checkpoints_auto_selfcal.pickle', 'wb') as f:
+        pickle.dump(checkpoint, f)
+
+    print(f"Checkpoint saved at step {step}")
+
+    return 
+
+
 def auto_selfcal(
         vislist=[], 
         spectral_average=True,
